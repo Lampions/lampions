@@ -13,4 +13,4 @@ routes.
 This repository provides a command-line utility to ease setting up the required
 AWS infrastructure.
 
-[browser extension]: https://github.com/lampions/lampions-webext
+[browser extension]: https://github.com/lampions/lampions-browser-extension
