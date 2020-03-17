@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
-import json
 import datetime
+import json
 import os
 from argparse import ArgumentParser
 
@@ -41,10 +41,7 @@ def create_s3_bucket(args):
     try:
         s3.create_bucket(
             Bucket=bucket,
-            CreateBucketConfiguration={
-                "LocationConstraint": region
-            }
-        )
+            CreateBucketConfiguration={"LocationConstraint": region})
     except (s3.exceptions.BucketAlreadyExists,
             s3.exceptions.BucketAlreadyOwnedByYou):
         pass
