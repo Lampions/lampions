@@ -126,12 +126,14 @@ def create_route_user(args):
     user_name = "LampionsRouteUser"
     iam = boto3.client("iam")
     try:
-        iam.create_user(UserName=user_name, PermissionsBoundary=arn)
+        iam.create_user(UserName=user_name)
     except iam.exceptions.EntityAlreadyExistsException:
         pass
     except Exception as exception:
         die_with_message(f"Failed to create route user '{user_name}':",
                          str(exception))
+
+    iam.attach_user_policy(UserName=user_name, PolicyArn=arn)
 
     try:
         access_key = iam.create_access_key(UserName=user_name)
