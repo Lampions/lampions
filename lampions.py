@@ -34,8 +34,6 @@ def _get_account_id():
 def create_s3_bucket(args):
     bucket = args["bucket"]
     region = args["region"]
-    print(args)
-    return
 
     s3 = boto3.client("s3")
     try:
