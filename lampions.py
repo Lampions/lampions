@@ -32,7 +32,8 @@ def _get_account_id():
 
 
 def create_s3_bucket(args):
-    bucket = args["bucket"]
+    domain = args["domain"]
+    bucket = f"lampions.{domain}"
     region = args["region"]
 
     s3 = boto3.client("s3")
@@ -116,6 +117,11 @@ def _create_routes_file_policy(bucket):
     except iam.exceptions.EntityAlreadyExistsException:
         account_id = _get_account_id()
         arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
+        # TODO: Handle iam.exceptions.LimitExceededException.
+        iam.create_policy_version(
+            PolicyArn=arn,
+            PolicyDocument=policy_document,
+            SetAsDefault=True)
     except Exception as exception:
         die_with_message(f"Failed to create routes file policy:",
                          str(exception))
@@ -125,7 +131,8 @@ def _create_routes_file_policy(bucket):
 
 
 def create_route_user(args):
-    bucket = args["bucket"]
+    domain = args["domain"]
+    bucket = f"lampions.{domain}"
 
     arn = _create_routes_file_policy(bucket)
     user_name = "LampionsRouteUser"
@@ -177,8 +184,9 @@ def parse_arguments():
         help="Create an S3 bucket to store route information and incoming "
              "emails in")
     bucket_parser.set_defaults(command=create_s3_bucket)
-    bucket_parser.add_argument("--bucket", help="The bucket name",
-                               required=True)
+    bucket_parser.add_argument(
+        "--domain", help="The domain name to create an S3 bucket for. The "
+        "bucket name will be of the form 'lampions.{domain}'", required=True)
     bucket_parser.add_argument("--region",
                                help="The region in which to create the bucket",
                                required=True, choices=BUCKET_REGIONS)
@@ -188,7 +196,7 @@ def parse_arguments():
         help="Create an AWS user with permission to read and write to the "
              "routes file")
     user_parser.set_defaults(command=create_route_user)
-    user_parser.add_argument("--bucket", help="The bucket name", required=True)
+    user_parser.add_argument("--domain", help="The domain name", required=True)
 
     args = vars(parser.parse_args())
     return {k: v for k, v in args.items() if v is not None}
