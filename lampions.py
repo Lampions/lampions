@@ -51,7 +51,7 @@ def create_s3_bucket(args):
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "AllowSESPuts",
+                "Sid": "LampionsAllowSESPut",
                 "Effect": "Allow",
                 "Principal": {
                     "Service": "ses.amazonaws.com"
@@ -91,14 +91,19 @@ def _create_routes_file_policy(bucket):
         "Version": "2012-10-17",
         "Statement": [
             {
+                "Sid": "LampionsAllowS3List",
+                "Effect": "Allow",
+                "Action": "s3:ListBucket",
+                "Resource": f"arn:aws:s3:::{bucket}"
+            },
+            {
+                "Sid": "LampionsAllowS3GetPut",
                 "Effect": "Allow",
                 "Action": [
                     "s3:GetObject",
                     "s3:PutObject"
                 ],
-                "Resource": [
-                    f"arn:aws:s3:::{bucket}/routes.json"
-                ]
+                "Resource": f"arn:aws:s3:::{bucket}/routes.json",
             }
         ]
     }
