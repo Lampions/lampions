@@ -48,6 +48,10 @@ def create_s3_bucket(args):
         die_with_message(f"Failed to create bucket '{bucket}':",
                          str(exception))
 
+    s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={
+        "Status": "Enabled"
+    })
+
     policy = {
         "Version": "2012-10-17",
         "Statement": [
