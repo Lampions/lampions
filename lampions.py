@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import datetime
+import io
 import json
 import os
+import zipfile
 from argparse import ArgumentParser
 
 import boto3
@@ -178,7 +180,7 @@ def create_route_user(args):
     except iam.exceptions.LimitExceededException:
         die_with_message("Maximum number of access keys for user "
                          f"'{user_name}' reached. Manually delete a key in "
-                         "the AWS Console or via the AWS CLI and try again.")
+                         "the AWS Console or via the AWS CLI, and try again.")
     except Exception as exception:
         die_with_message(f"Failed to access key for user '{user_name}':",
                          str(exception))
@@ -231,55 +233,221 @@ def add_email_addresses(args):
                              str(exception))
 
 
+def _create_lambda_function_role(bucket, region):
+    account_id = _get_account_id()
+    policy_name = "LampionsLambdaRolePolicy"
+    policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Sid": "LampionsCloudWatch",
+                "Effect": "Allow",
+                "Action": [
+                    "logs:CreateLogStream",
+                    "logs:CreateLogGroup",
+                    "logs:PutLogEvents"
+                ],
+                "Resource": "*"
+            },
+            {
+                "Sid": "LampionsLambdaFunctionReadAndForward",
+                "Effect": "Allow",
+                "Action": [
+                    "s3:GetObject",
+                    "ses:SendRawEmail"
+                ],
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}/inbox/*",
+                    f"arn:aws:ses:{region}:{account_id}:identity/*"
+                ]
+            }
+        ]
+    }
+    policy_document = json.dumps(policy)
+
+    iam = boto3.client("iam")
+    try:
+        policy = iam.create_policy(
+            PolicyName=policy_name,
+            PolicyDocument=policy_document)
+    except iam.exceptions.EntityAlreadyExistsException:
+        policy_arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
+    else:
+        policy_arn = policy["Policy"]["Arn"]
+
+    assume_policy = {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "lambda.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+        ]
+    }
+    assume_policy_document = json.dumps(assume_policy)
+
+    role_name = "LampionsLambdaRole"
+    try:
+        role = iam.create_role(RoleName=role_name,
+                               AssumeRolePolicyDocument=assume_policy_document)
+    except iam.exceptions.EntityAlreadyExistsException:
+        role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
+    else:
+        role_arn = role["Role"]["Arn"]
+    iam.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
+    return role_arn
+
+
+def _put_object_zip(file_path, bucket):
+    byte_stream = io.BytesIO()
+    filename = os.path.basename(file_path)
+    with zipfile.ZipFile(byte_stream, mode="a") as archive:
+        with open(file_path, "rb") as f:
+            archive.writestr(filename, f.read())
+    byte_stream.seek(0)
+
+    zip_filename = f"{filename}.zip"
+    s3 = boto3.client("s3")
+    s3.upload_fileobj(
+        byte_stream,
+        Bucket=bucket,
+        Key=zip_filename)
+    return zip_filename
+
+
+def create_receipt_rule(args):
+    region = args["region"]
+    domain = args["domain"]
+    bucket = f"lampions.{domain}"
+
+    # Create policy for the Lambda function.
+    role_arn = _create_lambda_function_role(bucket, region)
+
+    # Upload the code of the Lambda function to the Lampions bucket.
+    directory = os.path.abspath(os.path.dirname(__file__))
+    lambda_function_basename = "lampions_lambda_function"
+    lambda_function_filename = _put_object_zip(
+        os.path.join(directory, "src", f"{lambda_function_basename}.py"),
+        bucket)
+
+    # Create the Lambda function.
+    function_name = "LampionsLambdaFunction"
+    lambda_ = boto3.client("lambda", region_name=region)
+    try:
+        lambda_function = lambda_.create_function(
+            FunctionName=function_name,
+            Runtime="python3.7",
+            Handler=f"{lambda_function_basename}.handler",
+            Code={
+                "S3Bucket": bucket,
+                "S3Key": lambda_function_filename
+            },
+            Role=role_arn,
+            Environment={
+                "Variables": {
+                    "LAMPIONS_DOMAIN": domain,
+                    "LAMPIONS_REGION": region
+                }
+            })
+    except lambda_.exceptions.ResourceConflictException:
+        lambda_function = lambda_.get_function(FunctionName=function_name)
+        lambda_function_arn = lambda_function["Configuration"]["FunctionArn"]
+    else:
+        lambda_function_arn = lambda_function["FunctionArn"]
+
+    rule_set_name = "LampionsReceiptRuleSet"
+    ses = boto3.client("ses", region_name=region)
+    try:
+        ses.create_receipt_rule_set(RuleSetName=rule_set_name)
+    except ses.exceptions.AlreadyExistsException:
+        pass
+
+    rule = {
+        "Name": "LampionsReceiptRule",
+        "Enabled": True,
+        "TlsPolicy": "Optional",
+        "Recipients": [domain],
+        "ScanEnabled": False,
+        "Actions": [
+            {
+                "S3Action": {
+                    "BucketName": bucket,
+                    "ObjectKeyPrefix": "inbox"
+                }
+            },
+            {
+                "LambdaAction": {
+                    "FunctionArn": lambda_function_arn,
+                    "InvocationType": "Event"
+                }
+            }
+        ]
+    }
+    try:
+        ses.create_receipt_rule(RuleSetName=rule_set_name, Rule=rule)
+    except Exception as exc:
+        raise exc
+
+
 def parse_arguments():
     parser = ArgumentParser("Configure AWS for Lampions")
     subcommands = parser.add_subparsers(title="Subcommands", dest="command",
                                         required=True)
 
     bucket_parser = subcommands.add_parser(
-        "create-bucket",
-        help="Create an S3 bucket to store route information and incoming "
-             "emails in")
+        "create-bucket", help="Create an S3 bucket to store route information "
+        "and incoming emails in")
     bucket_parser.set_defaults(command=create_s3_bucket)
     bucket_parser.add_argument(
         "--domain", help="The domain name to create an S3 bucket for. The "
         "bucket name will be of the form 'lampions.{domain}'", required=True)
-    bucket_parser.add_argument("--region",
-                               help="The region in which to create the bucket",
-                               required=True, choices=BUCKET_REGIONS)
+    bucket_parser.add_argument(
+        "--region", help="The region in which to create the bucket",
+        required=True, choices=BUCKET_REGIONS)
 
     user_parser = subcommands.add_parser(
-        "create-route-user",
-        help="Create an AWS user with permission to read and write to the "
-             "routes file")
+        "create-route-user", help="Create an AWS user with permission to read "
+        "and write to the routes file")
     user_parser.set_defaults(command=create_route_user)
     user_parser.add_argument("--domain", help="The domain name", required=True)
 
     domain_parser = subcommands.add_parser(
-        "configure-domain",
-        help="Add a domain to Amazon SES and begin the verification process")
+        "configure-domain", help="Add a domain to Amazon SES and begin the "
+        "verification process")
     domain_parser.set_defaults(command=add_domain)
     domain_parser.add_argument("--domain", help="The domain to add to SES",
                                required=True)
     domain_parser.add_argument(
-        "--region", help="The region in which to add the domain to",
+        "--region", help="The region in which to add the domain",
         required=True, choices=SES_REGIONS)
 
     emails_parser = subcommands.add_parser(
-        "verify-email-addresses",
-        help="Add email addresses to the SES verification list enable "
-             "forwarding of incoming emails")
+        "verify-email-addresses", help="Add email addresses to the SES "
+        "verification list enable forwarding of incoming emails")
     emails_parser.set_defaults(command=add_email_addresses)
     emails_parser.add_argument(
         "--region", help="The region in which to add the domain to",
         required=True, choices=SES_REGIONS)
     emails_parser.add_argument(
-        "--addresses",
-        help="A list of email addresses to add to the verification list",
-        required=True, nargs="*")
+        "--addresses", help="A list of email addresses to add to the "
+        "verification list", required=True, nargs="*")
+
+    receipt_rule_parser = subcommands.add_parser(
+        "create-receipt-rule",
+        help="Install receipt rule which saves incoming emails in S3 and "
+        "triggers a Lambda function to forward emails")
+    receipt_rule_parser.set_defaults(command=create_receipt_rule)
+    receipt_rule_parser.add_argument(
+        "--domain", help="The domain name", required=True)
+    receipt_rule_parser.add_argument(
+        "--region", help="The region used for SES", required=True,
+        choices=SES_REGIONS)
 
     args = vars(parser.parse_args())
-    return {k: v for k, v in args.items() if v is not None}
+    return {key: value for key, value in args.items() if value is not None}
 
 
 def main():
