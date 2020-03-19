@@ -21,6 +21,12 @@ BUCKET_REGIONS = (
     "us-west-2"
 )
 
+SES_REGIONS = (
+    "eu-west-1",
+    "us-east-1",
+    "us-west-2"
+)
+
 
 def die_with_message(*args):
     raise SystemExit("Error: " + "\n".join(args))
@@ -134,6 +140,22 @@ def _create_routes_file_policy(bucket):
     return arn
 
 
+def _get_config_directory():
+    config_directory = os.path.expanduser("~/.config/lampions")
+    os.makedirs(config_directory, exist_ok=True)
+    return config_directory
+
+
+def _write_dict_to_600_json_file(dictionary, file_path):
+    def _json_serializer(o):
+        if isinstance(o, (datetime.date, datetime.datetime)):
+            return o.isoformat()
+
+    with open(file_path, "w") as f:
+        json.dump(dictionary, f, indent=2, default=_json_serializer)
+    os.chmod(file_path, 0o600)
+
+
 def create_route_user(args):
     domain = args["domain"]
     bucket = f"lampions.{domain}"
@@ -162,20 +184,51 @@ def create_route_user(args):
                          str(exception))
     else:
         del access_key["ResponseMetadata"]
-
-    config_directory = os.path.expanduser("~/.config/lampions")
-    os.makedirs(config_directory, exist_ok=True)
     access_key_id = access_key["AccessKey"]["AccessKeyId"]
+
+    config_directory = _get_config_directory()
     access_key_path = os.path.join(config_directory, f"{access_key_id}.json")
-
-    def _json_serializer(o):
-        if isinstance(o, (datetime.date, datetime.datetime)):
-            return o.isoformat()
-
-    with open(access_key_path, "w") as f:
-        json.dump(access_key, f, indent=2, default=_json_serializer)
-    os.chmod(access_key_path, 0o600)
+    _write_dict_to_600_json_file(access_key, access_key_path)
     print(f"Access key for route user saved at '{access_key_path}'")
+
+
+def add_domain(args):
+    domain = args["domain"]
+    region = args["region"]
+
+    ses = boto3.client("ses", region_name=region)
+    dkim_tokens = ses.verify_domain_dkim(Domain=domain)
+    del dkim_tokens["ResponseMetadata"]
+
+    config_directory = _get_config_directory()
+    dkim_tokens_path = os.path.join(config_directory, "dkim.json")
+    _write_dict_to_600_json_file(dkim_tokens, dkim_tokens_path)
+
+    print(f"DKIM tokens for domain '{domain}' saved at "
+          f"'{dkim_tokens_path}'.")
+    print()
+    print("For each token, add a CNAME record of the form\n\n"
+          "  Name                         Value\n"
+          "  <token>._domainkey.<domain>  <token>.dkim.amazonses.com.\n\n"
+          f"to the DNS settings of the domain '{domain}'.")
+    print()
+    print("To configure the domain for receiving, also make sure to add an MX "
+          "record with\n\n"
+          f"  inbound-smtp.{region}.amazonaws.com\n\n"
+          "to the DNS settings.")
+
+
+def add_email_addresses(args):
+    region = args["region"]
+    addresses = args["addresses"]
+
+    ses = boto3.client("ses", region_name=region)
+    for address in addresses:
+        try:
+            ses.verify_email_identity(EmailAddress=address)
+        except ses.exceptions.ClientError as exception:
+            die_with_message("Failed to add address to verification list:",
+                             str(exception))
 
 
 def parse_arguments():
@@ -201,6 +254,29 @@ def parse_arguments():
              "routes file")
     user_parser.set_defaults(command=create_route_user)
     user_parser.add_argument("--domain", help="The domain name", required=True)
+
+    domain_parser = subcommands.add_parser(
+        "configure-domain",
+        help="Add a domain to Amazon SES and begin the verification process")
+    domain_parser.set_defaults(command=add_domain)
+    domain_parser.add_argument("--domain", help="The domain to add to SES",
+                               required=True)
+    domain_parser.add_argument(
+        "--region", help="The region in which to add the domain to",
+        required=True, choices=SES_REGIONS)
+
+    emails_parser = subcommands.add_parser(
+        "verify-email-addresses",
+        help="Add email addresses to the SES verification list enable "
+             "forwarding of incoming emails")
+    emails_parser.set_defaults(command=add_email_addresses)
+    emails_parser.add_argument(
+        "--region", help="The region in which to add the domain to",
+        required=True, choices=SES_REGIONS)
+    emails_parser.add_argument(
+        "--addresses",
+        help="A list of email addresses to add to the verification list",
+        required=True, nargs="*")
 
     args = vars(parser.parse_args())
     return {k: v for k, v in args.items() if v is not None}
