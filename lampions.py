@@ -9,21 +9,7 @@ from argparse import ArgumentParser
 
 import boto3
 
-BUCKET_REGIONS = (
-    "EU",
-    "ap-northeast-1",
-    "ap-south-1",
-    "ap-southeast-1",
-    "ap-southeast-2",
-    "cn-north-1",
-    "eu-central-1",
-    "eu-west-1",
-    "sa-east-1",
-    "us-west-1",
-    "us-west-2"
-)
-
-SES_REGIONS = (
+REGIONS = (
     "eu-west-1",
     "us-east-1",
     "us-west-2"
@@ -44,7 +30,7 @@ def create_s3_bucket(args):
     bucket = f"lampions.{domain}"
     region = args["region"]
 
-    s3 = boto3.client("s3")
+    s3 = boto3.client("s3", region_name=region)
     try:
         s3.create_bucket(
             Bucket=bucket,
@@ -301,7 +287,7 @@ def _create_lambda_function_role(bucket, region):
     return role_arn
 
 
-def _put_object_zip(file_path, bucket):
+def _put_object_zip(file_path, region, bucket):
     byte_stream = io.BytesIO()
     filename = os.path.basename(file_path)
     with zipfile.ZipFile(byte_stream, mode="a") as archive:
@@ -309,8 +295,8 @@ def _put_object_zip(file_path, bucket):
             archive.writestr(filename, f.read())
     byte_stream.seek(0)
 
-    zip_filename = f"{filename}.zip"
-    s3 = boto3.client("s3")
+    zip_filename = f"{os.path.splitext(filename)[0]}.zip"
+    s3 = boto3.client("s3", region_name=region)
     s3.upload_fileobj(
         byte_stream,
         Bucket=bucket,
@@ -331,6 +317,7 @@ def create_receipt_rule(args):
     lambda_function_basename = "lampions_lambda_function"
     lambda_function_filename = _put_object_zip(
         os.path.join(directory, "src", f"{lambda_function_basename}.py"),
+        region,
         bucket)
 
     # Create the Lambda function.
@@ -406,7 +393,7 @@ def parse_arguments():
         "bucket name will be of the form 'lampions.{domain}'", required=True)
     bucket_parser.add_argument(
         "--region", help="The region in which to create the bucket",
-        required=True, choices=BUCKET_REGIONS)
+        required=True, choices=REGIONS)
 
     user_parser = subcommands.add_parser(
         "create-route-user", help="Create an AWS user with permission to read "
@@ -422,7 +409,7 @@ def parse_arguments():
                                required=True)
     domain_parser.add_argument(
         "--region", help="The region in which to add the domain",
-        required=True, choices=SES_REGIONS)
+        required=True, choices=REGIONS)
 
     emails_parser = subcommands.add_parser(
         "verify-email-addresses", help="Add email addresses to the SES "
@@ -430,7 +417,7 @@ def parse_arguments():
     emails_parser.set_defaults(command=add_email_addresses)
     emails_parser.add_argument(
         "--region", help="The region in which to add the domain to",
-        required=True, choices=SES_REGIONS)
+        required=True, choices=REGIONS)
     emails_parser.add_argument(
         "--addresses", help="A list of email addresses to add to the "
         "verification list", required=True, nargs="*")
@@ -444,7 +431,7 @@ def parse_arguments():
         "--domain", help="The domain name", required=True)
     receipt_rule_parser.add_argument(
         "--region", help="The region used for SES", required=True,
-        choices=SES_REGIONS)
+        choices=REGIONS)
 
     args = vars(parser.parse_args())
     return {key: value for key, value in args.items() if value is not None}
