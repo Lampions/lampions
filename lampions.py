@@ -338,12 +338,25 @@ def create_receipt_rule(args):
                     "LAMPIONS_DOMAIN": domain,
                     "LAMPIONS_REGION": region
                 }
-            })
+            },
+            Timeout=30)
     except lambda_.exceptions.ResourceConflictException:
         lambda_function = lambda_.get_function(FunctionName=function_name)
         lambda_function_arn = lambda_function["Configuration"]["FunctionArn"]
     else:
         lambda_function_arn = lambda_function["FunctionArn"]
+
+    # Add permission to the Lambda function, granting SES invocation
+    # privileges.
+    try:
+        # TODO: Do we also need SourceAccount=_get_account_id()?
+        lambda_.add_permission(
+            FunctionName=function_name,
+            StatementId="LampionsSESInvokeLambdaFunction",
+            Action="lambda:InvokeFunction",
+            Principal="ses.amazonaws.com")
+    except lambda_.exceptions.ResourceConflictException:
+        pass
 
     rule_set_name = "LampionsReceiptRuleSet"
     ses = boto3.client("ses", region_name=region)
@@ -375,8 +388,8 @@ def create_receipt_rule(args):
     }
     try:
         ses.create_receipt_rule(RuleSetName=rule_set_name, Rule=rule)
-    except Exception as exc:
-        raise exc
+    except ses.exceptions.AlreadyExistsException:
+        pass
 
 
 def parse_arguments():
