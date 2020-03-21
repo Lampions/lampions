@@ -349,6 +349,7 @@ def create_receipt_rule(args):
             },
             Timeout=30)
     except lambda_.exceptions.ResourceConflictException:
+        print("Lambda function exists. Overwriting the function code.")
         lambda_function = lambda_.update_function_code(
             FunctionName=function_name,
             S3Bucket=bucket,
