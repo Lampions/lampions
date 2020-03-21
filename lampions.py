@@ -395,6 +395,8 @@ def create_receipt_rule(args):
     except ses.exceptions.AlreadyExistsException:
         pass
 
+    ses.set_active_receipt_rule_set(RuleSetName=rule_set_name)
+
 
 def parse_arguments():
     parser = ArgumentParser("Configure AWS for Lampions")
