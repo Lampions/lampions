@@ -236,16 +236,22 @@ def _create_lambda_function_role(bucket, region):
                 "Resource": "*"
             },
             {
-                "Sid": "LampionsLambdaFunctionReadAndForward",
+                "Sid": "LampionsLambdaFunctionListBucket",
                 "Effect": "Allow",
-                "Action": [
-                    "s3:GetObject",
-                    "ses:SendRawEmail"
-                ],
-                "Resource": [
-                    f"arn:aws:s3:::{bucket}/inbox/*",
-                    f"arn:aws:ses:{region}:{account_id}:identity/*"
-                ]
+                "Action": "s3:ListBucket",
+                "Resource": f"arn:aws:s3:::{bucket}"
+            },
+            {
+                "Sid": "LampionsLambdaFunctionReadBucket",
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": f"arn:aws:s3:::{bucket}/*"
+            },
+            {
+                "Sid": "LampionsLambdaFunctionSendMail",
+                "Effect": "Allow",
+                "Action": "ses:SendRawEmail",
+                "Resource": f"arn:aws:ses:{region}:{account_id}:identity/*"
             }
         ]
     }
