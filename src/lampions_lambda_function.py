@@ -47,6 +47,7 @@ def _determine_forward_addresses(recipients):
                 else:
                     forward_addresses.append(
                         email.utils.formataddr((name, route["forward"])))
+                    break
     return forward_addresses
 
 
@@ -71,8 +72,8 @@ def _send_message(message_id):
         name = address
     sender = email.utils.formataddr((name, f"lampions@{domain}"))
     mail.replace_header("From", sender)
-    # Return-Path addresses must be verified in SES, which we cannot do. Drop
-    # the header instead.
+    # Return-Path addresses must be verified in SES, which we have no control
+    # over. Drop the header instead.
     del mail["Return-Path"]
 
     region = os.environ["LAMPIONS_REGION"]

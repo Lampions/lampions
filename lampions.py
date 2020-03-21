@@ -321,7 +321,7 @@ def create_receipt_rule(args):
     role_arn = _create_lambda_function_role(bucket, region)
 
     # Upload the code of the Lambda function to the Lampions bucket.
-    directory = os.path.abspath(os.path.dirname(__file__))
+    directory = os.path.realpath(os.path.dirname(__file__))
     lambda_function_basename = "lampions_lambda_function"
     lambda_function_filename = _put_object_zip(
         os.path.join(directory, "src", f"{lambda_function_basename}.py"),
