@@ -292,7 +292,9 @@ def _put_object_zip(file_path, region, bucket):
     filename = os.path.basename(file_path)
     with zipfile.ZipFile(byte_stream, mode="a") as archive:
         with open(file_path, "rb") as f:
-            archive.writestr(filename, f.read())
+            info = zipfile.ZipInfo(filename)
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, f.read())
     byte_stream.seek(0)
 
     zip_filename = f"{os.path.splitext(filename)[0]}.zip"
