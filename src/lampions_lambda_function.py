@@ -71,6 +71,9 @@ def _send_message(message_id):
         name = address
     sender = email.utils.formataddr((name, f"lampions@{domain}"))
     mail.replace_header("From", sender)
+    # Return-Path addresses must be verified in SES, which we cannot do. Drop
+    # the header instead.
+    del mail["Return-Path"]
 
     region = os.environ["LAMPIONS_REGION"]
     kwargs = {
