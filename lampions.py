@@ -343,15 +343,17 @@ def create_receipt_rule(args):
             },
             Timeout=30)
     except lambda_.exceptions.ResourceConflictException:
-        lambda_function = lambda_.get_function(FunctionName=function_name)
-        lambda_function_arn = lambda_function["Configuration"]["FunctionArn"]
+        lambda_function = lambda_.update_function_code(
+            FunctionName=function_name,
+            S3Bucket=bucket,
+            S3Key=lambda_function_filename)
+        lambda_function_arn = lambda_function["FunctionArn"]
     else:
         lambda_function_arn = lambda_function["FunctionArn"]
 
     # Add permission to the Lambda function, granting SES invocation
     # privileges.
     try:
-        # TODO: Do we also need SourceAccount=_get_account_id()?
         lambda_.add_permission(
             FunctionName=function_name,
             StatementId="LampionsSESInvokeLambdaFunction",
