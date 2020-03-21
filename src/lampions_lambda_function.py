@@ -16,7 +16,7 @@ def _retrieve_message(message_id):
     return message["Body"].read()
 
 
-def _determine_forward_address(recipient):
+def _determine_forward_addresses(recipients):
     domain = os.environ["LAMPIONS_DOMAIN"]
     bucket = f"lampions.{domain}"
 
@@ -34,17 +34,20 @@ def _determine_forward_address(recipient):
     else:
         routes = dictionary["routes"]
 
-    name, address = email.utils.parseaddr(recipient)
-    for route in routes:
-        alias = route["alias"]
-        recipient = f"{alias}@{domain}"
-        if address == recipient:
-            if not route["active"]:
-                print(f"Not forwarding email to '{recipient}' "
-                      "(route inactive)")
-                return None
-            return email.utils.formataddr((name, route["forward"]))
-    return None
+    forward_addresses = []
+    for recipient in recipients:
+        name, address = email.utils.parseaddr(recipient)
+        for route in routes:
+            alias = route["alias"]
+            recipient = f"{alias}@{domain}"
+            if address == recipient:
+                if not route["active"]:
+                    print(f"Not forwarding email to '{recipient}' "
+                          "(route inactive)")
+                else:
+                    forward_addresses.append(
+                        email.utils.formataddr((name, route["forward"])))
+    return forward_addresses
 
 
 def _send_message(message_id):
@@ -52,9 +55,7 @@ def _send_message(message_id):
     mail = email.message_from_string(file)
 
     recipients = mail.get_all("To")
-    forward_addresses = list(
-        filter(None, [_determine_forward_address(recipient)
-                      for recipient in recipients]))
+    forward_addresses = _determine_forward_addresses(recipients)
     if not forward_addresses:
         print(f"No alias found for '{recipients}'")
         return
