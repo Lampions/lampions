@@ -731,9 +731,6 @@ def parse_arguments():
         help="Add address to the list of possible forward addresses")
     forward_parser.set_defaults(command=add_forward_address)
     forward_parser.add_argument(
-        "--region", help="The SES region in which to add the domain",
-        required=True, choices=REGIONS)
-    forward_parser.add_argument(
         "--address", help="Email address to add to the verification list",
         required=True)
 
