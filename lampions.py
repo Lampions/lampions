@@ -103,8 +103,8 @@ def _get_account_id():
 
 @lampions.requires_config
 def create_s3_bucket(config, args):
-    region = config["region"]
-    domain = config["domain"]
+    region = config["Region"]
+    domain = config["Domain"]
     bucket = f"lampions.{domain}"
 
     s3 = boto3.client("s3", region_name=region)
@@ -206,7 +206,7 @@ def create_route_user(config, args):
         print("Route user and access key already exist")
         return
 
-    domain = config["domain"]
+    domain = config["Domain"]
     bucket = f"lampions.{domain}"
 
     policy_arn = _create_routes_file_policy(domain, bucket)
@@ -240,8 +240,8 @@ def create_route_user(config, args):
 
 @lampions.requires_config
 def verify_domain(config, args):
-    region = config["region"]
-    domain = config["domain"]
+    region = config["Region"]
+    domain = config["Domain"]
 
     ses = boto3.client("ses", region_name=region)
     dkim_tokens = ses.verify_domain_dkim(Domain=domain)
@@ -359,8 +359,8 @@ def _put_object_zip(file_path, region, bucket):
 
 @lampions.requires_config
 def create_receipt_rule(config, args):
-    region = config["region"]
-    domain = config["domain"]
+    region = config["Region"]
+    domain = config["Domain"]
     bucket = f"lampions.{domain}"
 
     # Create policy for the Lambda function.
@@ -482,7 +482,7 @@ def print_config(config, args):
 
 @lampions.requires_config
 def add_forward_address(config, args):
-    region = config["region"]
+    region = config["Region"]
     address = args["address"]
 
     if not validate_email(address):
