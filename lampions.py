@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import datetime
+import functools
 import io
 import json
 import os
@@ -8,6 +9,9 @@ import zipfile
 from argparse import ArgumentParser
 
 import boto3
+from validate_email import validate_email
+
+CONFIG_PATH = os.path.expanduser("~/.config/lampions/config.json")
 
 REGIONS = (
     "eu-west-1",
@@ -20,15 +24,86 @@ def die_with_message(*args):
     raise SystemExit("Error: " + "\n".join(args))
 
 
+class Config(dict):
+    REQUIRED_KEYS = ("Region", "Domain")
+    VALID_KEYS = ("AccessKeyId", "SecretAccessKey", "DkimTokens")
+
+    def __init__(self, file_path):
+        super().__init__()
+        self._file_path = file_path
+        self._read()
+
+    def _read(self):
+        if os.path.isfile(self._file_path):
+            with open(self._file_path) as f:
+                try:
+                    config = json.loads(f.read())
+                except json.JSONDecodeError:
+                    pass
+                else:
+                    self.update(config)
+                    self.verify()
+
+    def __setitem__(self, key, value):
+        if key not in self.REQUIRED_KEYS and key not in self.VALID_KEYS:
+            die_with_message(f"Invalid config key '{key}'")
+        super().__setitem__(key, value)
+
+    def __str__(self):
+        def _json_serializer(o):
+            if isinstance(o, (datetime.date, datetime.datetime)):
+                return o.isoformat()
+
+        return json.dumps(self, indent=2, default=_json_serializer)
+
+    def verify(self):
+        for key in self.REQUIRED_KEYS:
+            if key not in self:
+                die_with_message(
+                    "Lampions is not initialized yet. Call "
+                    f"'{os.path.basename(__file__)} init' first.")
+        for key in self.keys():
+            if key not in self.REQUIRED_KEYS and key not in self.VALID_KEYS:
+                die_with_message(f"Invalid key '{key}' in config")
+
+    def save(self):
+        self.verify()
+        config_directory = os.path.dirname(self._file_path)
+        os.makedirs(config_directory, exist_ok=True)
+        with open(self._file_path, "w") as f:
+            f.write(str(self))
+        os.chmod(self._file_path, 0o600)
+
+
+class Lampions:
+    def __init__(self):
+        self._config = None
+
+    def requires_config(self, function):
+        @functools.wraps(function)
+        def wrapper(*args, **kwargs):
+            if self._config is None:
+                self._config = config = Config(CONFIG_PATH)
+            else:
+                config = self._config
+            config.verify()
+            return function(config, *args, **kwargs)
+        return wrapper
+
+
+lampions = Lampions()
+
+
 def _get_account_id():
     sts = boto3.client("sts")
     return sts.get_caller_identity()["Account"]
 
 
-def create_s3_bucket(args):
-    domain = args["domain"]
+@lampions.requires_config
+def create_s3_bucket(config, args):
+    region = config["region"]
+    domain = config["domain"]
     bucket = f"lampions.{domain}"
-    region = args["region"]
 
     s3 = boto3.client("s3", region_name=region)
     try:
@@ -115,7 +190,8 @@ def _create_routes_file_policy(bucket):
     except iam.exceptions.EntityAlreadyExistsException:
         account_id = _get_account_id()
         arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
-        # TODO: Handle iam.exceptions.LimitExceededException.
+        # TODO: Handle iam.exceptions.LimitExceededException when we have
+        #       more than x versions of a policy.
         iam.create_policy_version(
             PolicyArn=arn,
             PolicyDocument=policy_document,
@@ -128,24 +204,13 @@ def _create_routes_file_policy(bucket):
     return arn
 
 
-def _get_config_directory():
-    config_directory = os.path.expanduser("~/.config/lampions")
-    os.makedirs(config_directory, exist_ok=True)
-    return config_directory
+@lampions.requires_config
+def create_route_user(config, args):
+    if config.get("AccessKeyId") and config.get("SecretAccessKey"):
+        print("Route user and access key already exist")
+        return
 
-
-def _write_dict_to_600_json_file(dictionary, file_path):
-    def _json_serializer(o):
-        if isinstance(o, (datetime.date, datetime.datetime)):
-            return o.isoformat()
-
-    with open(file_path, "w") as f:
-        json.dump(dictionary, f, indent=2, default=_json_serializer)
-    os.chmod(file_path, 0o600)
-
-
-def create_route_user(args):
-    domain = args["domain"]
+    domain = config["domain"]
     bucket = f"lampions.{domain}"
 
     arn = _create_routes_file_policy(bucket)
@@ -168,32 +233,31 @@ def create_route_user(args):
                          f"'{user_name}' reached. Manually delete a key in "
                          "the AWS Console or via the AWS CLI, and try again.")
     except Exception as exception:
-        die_with_message(f"Failed to access key for user '{user_name}':",
-                         str(exception))
-    else:
-        del access_key["ResponseMetadata"]
-    access_key_id = access_key["AccessKey"]["AccessKeyId"]
+        die_with_message(
+            f"Failed to create access key for user '{user_name}':",
+            str(exception))
 
-    config_directory = _get_config_directory()
-    access_key_path = os.path.join(config_directory, f"{access_key_id}.json")
-    _write_dict_to_600_json_file(access_key, access_key_path)
-    print(f"Access key for route user saved at '{access_key_path}'")
+    config["AccessKeyId"] = access_key["AccessKey"]["AccessKeyId"]
+    config["SecretAccessKey"] = access_key["AccessKey"]["SecretAccessKey"]
+    config.save()
+
+    print(f"User '{user_name}' and access keys created")
 
 
-def add_domain(args):
-    domain = args["domain"]
-    region = args["region"]
+@lampions.requires_config
+def add_domain(config, args):
+    region = config["region"]
+    domain = config["domain"]
 
     ses = boto3.client("ses", region_name=region)
     dkim_tokens = ses.verify_domain_dkim(Domain=domain)
     del dkim_tokens["ResponseMetadata"]
+    config.update(dkim_tokens)
+    config.save()
 
-    config_directory = _get_config_directory()
-    dkim_tokens_path = os.path.join(config_directory, "dkim.json")
-    _write_dict_to_600_json_file(dkim_tokens, dkim_tokens_path)
-
-    print(f"DKIM tokens for domain '{domain}' saved at "
-          f"'{dkim_tokens_path}'.")
+    print(f"DKIM tokens for domain '{domain}' created:")
+    for token in config["DkimTokens"]:
+        print(f"  {token}")
     print()
     print("For each token, add a CNAME record of the form\n\n"
           "  Name                         Value\n"
@@ -204,19 +268,6 @@ def add_domain(args):
           "record with\n\n"
           f"  inbound-smtp.{region}.amazonaws.com\n\n"
           "to the DNS settings.")
-
-
-def add_email_addresses(args):
-    region = args["region"]
-    addresses = args["addresses"]
-
-    ses = boto3.client("ses", region_name=region)
-    for address in addresses:
-        try:
-            ses.verify_email_identity(EmailAddress=address)
-        except ses.exceptions.ClientError as exception:
-            die_with_message("Failed to add address to verification list:",
-                             str(exception))
 
 
 def _create_lambda_function_role(bucket, region):
@@ -312,9 +363,10 @@ def _put_object_zip(file_path, region, bucket):
     return zip_filename
 
 
-def create_receipt_rule(args):
-    region = args["region"]
-    domain = args["domain"]
+@lampions.requires_config
+def create_receipt_rule(config, args):
+    region = config["region"]
+    domain = config["domain"]
     bucket = f"lampions.{domain}"
 
     # Create policy for the Lambda function.
@@ -325,8 +377,7 @@ def create_receipt_rule(args):
     lambda_function_basename = "lampions_lambda_function"
     lambda_function_filename = _put_object_zip(
         os.path.join(directory, "src", f"{lambda_function_basename}.py"),
-        region,
-        bucket)
+        region, bucket)
 
     # Create the Lambda function.
     function_name = "LampionsLambdaFunction"
@@ -401,72 +452,126 @@ def create_receipt_rule(args):
         ses.create_receipt_rule(RuleSetName=rule_set_name, Rule=rule)
     except ses.exceptions.AlreadyExistsException:
         pass
-
     ses.set_active_receipt_rule_set(RuleSetName=rule_set_name)
+
+    print("Receipt rule created and activated")
+
+
+@lampions.requires_config
+def configure_lampions(config, args):
+    steps = [
+        ("Create S3 bucket", create_s3_bucket),
+        ("Create route user", create_route_user),
+        ("Register domain with SES", add_domain),
+        ("Create receipt rule", create_receipt_rule)
+    ]
+    for i, (description, step) in enumerate(steps, start=1):
+        print(f"Step {i}: {description}")
+        step(args)
+        print()
+
+
+def initialize_config(args):
+    domain = args["domain"]
+    if not validate_email(f"art.vandelay@{domain}"):
+        die_with_message(f"Invalid domain name '{domain}'")
+
+    config = Config(CONFIG_PATH)
+    config["Region"] = args["region"]
+    config["Domain"] = domain
+    config.save()
+
+
+@lampions.requires_config
+def print_config(config, args):
+    print(str(config))
+
+
+@lampions.requires_config
+def add_forward_address(config, args):
+    region = config["region"]
+    address = args["address"]
+
+    if not validate_email(address):
+        die_with_message(f"Invalid email address '{address}'")
+
+    ses = boto3.client("ses", region_name=region)
+    try:
+        ses.verify_email_identity(EmailAddress=address)
+    except ses.exceptions.ClientError as exception:
+        die_with_message("Failed to add address to verification list:",
+                         str(exception))
+    else:
+        print(f"Verification mail sent to '{address}'")
 
 
 def parse_arguments():
-    parser = ArgumentParser("Configure AWS for Lampions")
-    subcommands = parser.add_subparsers(title="Subcommands", dest="command",
-                                        required=True)
+    parser = ArgumentParser()
+    commands = parser.add_subparsers(title="Subcommands", dest="command",
+                                     required=True)
 
-    bucket_parser = subcommands.add_parser(
+    # Command 'init'
+    init_parser = commands.add_parser(
+        "init", help="Initialize the Lampion config")
+    init_parser.set_defaults(command=initialize_config)
+    init_parser.add_argument(
+        "--region", help="The AWS region in which all resources are created",
+        required=True)
+    init_parser.add_argument("--domain", help="The domain name", required=True)
+
+    # Command 'show-config'
+    show_config_parser = commands.add_parser(
+        "show-config", help="Print the configuration file")
+    show_config_parser.set_defaults(command=print_config)
+
+    # Command 'configure'
+    configure_parser = commands.add_parser(
+        "configure", help="Configure AWS infrastructure for Lampions")
+    configure_parser.set_defaults(command=configure_lampions)
+    configure_command = configure_parser.add_subparsers(
+        title="configure", dest="subcommand")
+
+    # Subcommand 'configure create-bucket'
+    bucket_parser = configure_command.add_parser(
         "create-bucket", help="Create an S3 bucket to store route information "
         "and incoming emails in")
     bucket_parser.set_defaults(command=create_s3_bucket)
-    bucket_parser.add_argument(
-        "--domain", help="The domain name to create an S3 bucket for. The "
-        "bucket name will be of the form 'lampions.{domain}'", required=True)
-    bucket_parser.add_argument(
-        "--region", help="The region in which to create the bucket",
-        required=True, choices=REGIONS)
 
-    user_parser = subcommands.add_parser(
+    # Subcommand 'configure create-route-user'
+    user_parser = configure_command.add_parser(
         "create-route-user", help="Create an AWS user with permission to read "
         "and write to the routes file")
     user_parser.set_defaults(command=create_route_user)
-    user_parser.add_argument("--domain", help="The domain name", required=True)
 
-    domain_parser = subcommands.add_parser(
-        "configure-domain", help="Add a domain to Amazon SES and begin the "
+    # Subcommand 'configure register-domain'
+    domain_parser = configure_command.add_parser(
+        "register-domain", help="Add a domain to Amazon SES and begin the "
         "verification process")
     domain_parser.set_defaults(command=add_domain)
-    domain_parser.add_argument("--domain", help="The domain to add to SES",
-                               required=True)
-    domain_parser.add_argument(
-        "--region", help="The region in which to add the domain",
-        required=True, choices=REGIONS)
 
-    emails_parser = subcommands.add_parser(
-        "verify-email-addresses", help="Add email addresses to the SES "
-        "verification list enable forwarding of incoming emails")
-    emails_parser.set_defaults(command=add_email_addresses)
-    emails_parser.add_argument(
-        "--region", help="The region in which to add the domain to",
-        required=True, choices=REGIONS)
-    emails_parser.add_argument(
-        "--addresses", help="A list of email addresses to add to the "
-        "verification list", required=True, nargs="*")
-
-    receipt_rule_parser = subcommands.add_parser(
+    # Subcommand 'configure create-receipt-rule'
+    receipt_rule_parser = configure_command.add_parser(
         "create-receipt-rule",
         help="Install receipt rule which saves incoming emails in S3 and "
         "triggers a Lambda function to forward emails")
     receipt_rule_parser.set_defaults(command=create_receipt_rule)
-    receipt_rule_parser.add_argument(
-        "--domain", help="The domain name", required=True)
-    receipt_rule_parser.add_argument(
-        "--region", help="The region used for SES", required=True,
-        choices=REGIONS)
+
+    # Command 'add-forward-address'
+    emails_parser = commands.add_parser(
+        "add-forward-address",
+        help="Add address to the list of possible forward addresses")
+    emails_parser.set_defaults(command=add_forward_address)
+    emails_parser.add_argument(
+        "--region", help="The SES region in which to add the domain",
+        required=True, choices=REGIONS)
+    emails_parser.add_argument(
+        "--address", help="Email address to add to the verification list",
+        required=True)
 
     args = vars(parser.parse_args())
     return {key: value for key, value in args.items() if value is not None}
 
 
-def main():
+if __name__ == "__main__":
     args = parse_arguments()
     args["command"](args)
-
-
-if __name__ == "__main__":
-    main()
