@@ -263,8 +263,9 @@ def verify_domain(config, args):
     print()
     print("For each token, add a CNAME record of the form\n\n"
           "  Name                         Value\n"
-          "  <token>._domainkey.<domain>  <token>.dkim.amazonses.com.\n\n"
-          f"to the DNS settings of the domain '{domain}'.")
+          "  <token>._domainkey.<domain>  <token>.dkim.amazonses.com\n\n"
+          f"to the DNS settings of the domain '{domain}'. Note that the "
+          "'.<domain>' part\nneeds to be omitted with some DNS providers.")
     print()
     print("To configure the domain for receiving, also make sure to add an MX "
           "record with\n\n"
