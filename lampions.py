@@ -12,6 +12,7 @@ from argparse import ArgumentParser
 import boto3
 from validate_email import validate_email
 
+EXECUTABLE = os.path.basename(__file__)
 CONFIG_PATH = os.path.expanduser("~/.config/lampions/config.json")
 
 REGIONS = (
@@ -61,8 +62,8 @@ class Config(dict):
         for key in self.REQUIRED_KEYS:
             if key not in self:
                 die_with_message(
-                    "Lampions is not initialized yet. Call "
-                    f"'{os.path.basename(__file__)} init' first.")
+                    f"Lampions is not initialized yet. Call '{EXECUTABLE} "
+                    "init' first.")
         for key in self.keys():
             if key not in self.REQUIRED_KEYS and key not in self.VALID_KEYS:
                 die_with_message(f"Invalid key '{key}' in config")
@@ -126,7 +127,7 @@ def create_s3_bucket(config, args):
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "LampionsAllowSESPut",
+                "Sid": f"lampions.{domain}.ses.s3.put",
                 "Effect": "Allow",
                 "Principal": {
                     "Service": "ses.amazonaws.com"
@@ -150,7 +151,7 @@ def create_s3_bucket(config, args):
     print(f"Created S3 bucket '{bucket}")
 
 
-def _create_routes_file_policy(bucket):
+def _create_routes_file_policy(domain, bucket):
     """Create policy for the routes file.
 
     Create a policy that allows reading and writing to the ``routes.json`` file
@@ -161,18 +162,18 @@ def _create_routes_file_policy(bucket):
     arn : str
         The arn of the policy.
     """
-    policy_name = "LampionsRoutesFilePolicy"
+    policy_name = f"lampions.{domain}.routes.file.policy",
     policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "LampionsAllowS3List",
+                "Sid": f"lampions.{domain}.s3.list.bucket",
                 "Effect": "Allow",
                 "Action": "s3:ListBucket",
                 "Resource": f"arn:aws:s3:::{bucket}"
             },
             {
-                "Sid": "LampionsAllowS3GetPut",
+                "Sid": f"lampions.{domain}.s3.get.put.routes",
                 "Effect": "Allow",
                 "Action": [
                     "s3:GetObject",
@@ -191,12 +192,6 @@ def _create_routes_file_policy(bucket):
     except iam.exceptions.EntityAlreadyExistsException:
         account_id = _get_account_id()
         arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
-        # TODO: Handle iam.exceptions.LimitExceededException when we have
-        #       more than x versions of a policy.
-        iam.create_policy_version(
-            PolicyArn=arn,
-            PolicyDocument=policy_document,
-            SetAsDefault=True)
     except Exception as exception:
         die_with_message(f"Failed to create routes file policy:",
                          str(exception))
@@ -214,8 +209,8 @@ def create_route_user(config, args):
     domain = config["domain"]
     bucket = f"lampions.{domain}"
 
-    arn = _create_routes_file_policy(bucket)
-    user_name = "LampionsRouteUser"
+    policy_arn = _create_routes_file_policy(domain, bucket)
+    user_name = f"lampions.{domain}.route.user"
     iam = boto3.client("iam")
     try:
         iam.create_user(UserName=user_name)
@@ -225,24 +220,22 @@ def create_route_user(config, args):
         die_with_message(f"Failed to create route user '{user_name}':",
                          str(exception))
 
-    iam.attach_user_policy(UserName=user_name, PolicyArn=arn)
+    iam.attach_user_policy(UserName=user_name, PolicyArn=policy_arn)
 
     try:
         access_key = iam.create_access_key(UserName=user_name)
-    except iam.exceptions.LimitExceededException:
-        die_with_message("Maximum number of access keys for user "
-                         f"'{user_name}' reached. Manually delete a key in "
-                         "the AWS Console or via the AWS CLI, and try again.")
     except Exception as exception:
         die_with_message(
             f"Failed to create access key for user '{user_name}':",
             str(exception))
 
-    config["AccessKeyId"] = access_key["AccessKey"]["AccessKeyId"]
-    config["SecretAccessKey"] = access_key["AccessKey"]["SecretAccessKey"]
+    key = access_key["AccessKey"]
+    config["AccessKeyId"] = key["AccessKeyId"]
+    config["SecretAccessKey"] = key["SecretAccessKey"]
     config.save()
 
-    print(f"User '{user_name}' and access keys created")
+    print(f"User '{user_name}' and access keys created. To view the keys, "
+          "use '{EXECUTABLE} show-config'.")
 
 
 @lampions.requires_config
@@ -271,36 +264,36 @@ def add_domain(config, args):
           "to the DNS settings.")
 
 
-def _create_lambda_function_role(bucket, region):
+def _create_lambda_function_role(region, domain, bucket):
     account_id = _get_account_id()
-    policy_name = "LampionsLambdaRolePolicy"
+    policy_name = f"lampions.{domain}.lambda.role.policy"
     policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": "LampionsCloudWatch",
+                "Sid": f"lampions.{domain}.lambda.function.cloudwatch",
                 "Effect": "Allow",
                 "Action": [
-                    "logs:CreateLogStream",
                     "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
                     "logs:PutLogEvents"
                 ],
                 "Resource": "*"
             },
             {
-                "Sid": "LampionsLambdaFunctionListBucket",
+                "Sid": f"lampions.{domain}.lambda.function.s3.list.bucket",
                 "Effect": "Allow",
                 "Action": "s3:ListBucket",
                 "Resource": f"arn:aws:s3:::{bucket}"
             },
             {
-                "Sid": "LampionsLambdaFunctionReadBucket",
+                "Sid": f"lampions.{domain}.lambda.function.s3.get.bucket",
                 "Effect": "Allow",
                 "Action": "s3:GetObject",
                 "Resource": f"arn:aws:s3:::{bucket}/*"
             },
             {
-                "Sid": "LampionsLambdaFunctionSendMail",
+                "Sid": f"lampions.{domain}.lambda.function.ses.send.mail",
                 "Effect": "Allow",
                 "Action": "ses:SendRawEmail",
                 "Resource": f"arn:aws:ses:{region}:{account_id}:identity/*"
@@ -333,7 +326,7 @@ def _create_lambda_function_role(bucket, region):
     }
     assume_policy_document = json.dumps(assume_policy)
 
-    role_name = "LampionsLambdaRole"
+    role_name = f"lampions.{domain}.lambda.function.role"
     try:
         role = iam.create_role(RoleName=role_name,
                                AssumeRolePolicyDocument=assume_policy_document)
@@ -371,7 +364,7 @@ def create_receipt_rule(config, args):
     bucket = f"lampions.{domain}"
 
     # Create policy for the Lambda function.
-    role_arn = _create_lambda_function_role(bucket, region)
+    role_arn = _create_lambda_function_role(region, domain, bucket)
 
     # Upload the code of the Lambda function to the Lampions bucket.
     directory = os.path.realpath(os.path.dirname(__file__))
@@ -381,7 +374,7 @@ def create_receipt_rule(config, args):
         region, bucket)
 
     # Create the Lambda function.
-    function_name = "LampionsLambdaFunction"
+    function_name = f"lampions.{domain}.lambda.function"
     lambda_ = boto3.client("lambda", region_name=region)
     try:
         lambda_function = lambda_.create_function(
@@ -401,27 +394,26 @@ def create_receipt_rule(config, args):
             },
             Timeout=30)
     except lambda_.exceptions.ResourceConflictException:
-        print("Lambda function exists. Overwriting the function code.")
         lambda_function = lambda_.update_function_code(
             FunctionName=function_name,
             S3Bucket=bucket,
             S3Key=lambda_function_filename)
-        lambda_function_arn = lambda_function["FunctionArn"]
+        function_arn = lambda_function["FunctionArn"]
     else:
-        lambda_function_arn = lambda_function["FunctionArn"]
+        function_arn = lambda_function["FunctionArn"]
 
     # Add permission to the Lambda function, granting SES invocation
     # privileges.
     try:
         lambda_.add_permission(
             FunctionName=function_name,
-            StatementId="LampionsSESInvokeLambdaFunction",
+            StatementId=f"lampions.{domain}.ses.lambda.invoke.function",
             Action="lambda:InvokeFunction",
             Principal="ses.amazonaws.com")
     except lambda_.exceptions.ResourceConflictException:
         pass
 
-    rule_set_name = "LampionsReceiptRuleSet"
+    rule_set_name = f"lampions.{domain}.receipt.rule.set"
     ses = boto3.client("ses", region_name=region)
     try:
         ses.create_receipt_rule_set(RuleSetName=rule_set_name)
@@ -429,7 +421,7 @@ def create_receipt_rule(config, args):
         pass
 
     rule = {
-        "Name": "LampionsReceiptRule",
+        "Name": f"lampions.{domain}.receipt.rule",
         "Enabled": True,
         "TlsPolicy": "Optional",
         "Recipients": [domain],
@@ -443,7 +435,7 @@ def create_receipt_rule(config, args):
             },
             {
                 "LambdaAction": {
-                    "FunctionArn": lambda_function_arn,
+                    "FunctionArn": function_arn,
                     "InvocationType": "Event"
                 }
             }
@@ -455,7 +447,7 @@ def create_receipt_rule(config, args):
         pass
     ses.set_active_receipt_rule_set(RuleSetName=rule_set_name)
 
-    print("Receipt rule created and activated")
+    print("Receipt rule created")
 
 
 @lampions.requires_config
