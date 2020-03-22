@@ -529,7 +529,7 @@ def parse_arguments():
         "configure", help="Configure AWS infrastructure for Lampions")
     configure_parser.set_defaults(command=configure_lampions)
     configure_command = configure_parser.add_subparsers(
-        title="configure", dest="subcommand")
+        title="configure")
 
     # Subcommand 'configure create-bucket'
     bucket_parser = configure_command.add_parser(
