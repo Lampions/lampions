@@ -674,7 +674,7 @@ def parse_arguments():
     init_parser.set_defaults(command=initialize_config)
     init_parser.add_argument(
         "--region", help="The AWS region in which all resources are created",
-        required=True)
+        required=True, choices=REGIONS)
     init_parser.add_argument("--domain", help="The domain name", required=True)
 
     # Command 'show-config'
