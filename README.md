@@ -73,27 +73,47 @@ Alternatively, since `lampions` uses the `boto3` python package to interface
 with the AWS API, the usual environment variable overrides `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, etc. can be used instead.
 
-1. Call `lampions create-bucket` to create an S3 bucket in which the routes
-   table and incoming emails will be stored.
-1. Use `lampions create-route-user` to create a new user in IAM with read/write
-   access to the routes table.
-   The user credentials, which are necessary to define routes via the [browser
-   extension], will be stored in the `~/.config/lampions` directory.
+To get started, first run `lampions init --region <region> --domain <domain>`
+to initialize the Lampions config with the region in which all AWS resources
+will be created.
+
+After that, the `lampions configure` command can be used to perform all
+necessary configuration steps in sequence.
+Alternatively, one may perform the individual steps manually:
+1. Call `lampions configure create-bucket` to create an S3 bucket in which the
+   routes table and incoming emails will be stored.
+1. Use `lampions configure create-route-user` to create a new user in IAM with
+   read/write access to the routes table.
+   The user credentials, which are also needed to define routes via the
+   [browser extension], will be stored in the config file.
+   To view the config and retrieve the user credentials, run `lampions
+   show-config`.
 1. In order to configure a domain for sending and receiving, use `lampions
-   configure-domain` to add a domain to SES.
+   configure verify-domain` to add a domain to SES.
    When a domain is successfully added, the subcommand writes a set of DKIM
-   tokens to the `~/.config/lampions/dkim.json` file.
+   tokens to the config file.
    These tokens then need to be used to add a set of CNAME records to the DNS
    settings of the domain in order to enable email sending via the domain.
-1. In order to forward incoming emails when the AWS account is still in the
-   SES sandbox, forward addresses first need to be verified by SES.
-   To that end, use `lampions verify-email-addresses`, which accepts a list of
-   email addresses to send verification mails to.
 1. Finally, create a receipt rule set to write incoming emails to an S3 bucket,
    and trigger the Lambda function, which forwards emails according to the
    information found in the routes table.
+   To that end, run `lampions configure create-receipt-rule`.
+
+## Defining Routes
+
+In order to forward incoming emails when the AWS account is still in the [SES
+sandbox], forward addresses first need to be verified by SES.
+To that end, use `lampions add-forward-address` to add an address to the SES
+identity list, and send a verification mail to the address.
+
+In order to manipulate routes, the following commands are provided:
+* To list defined routes, use `lampions list-routes`.
+* To add, update or remove a route, use `lampions {add,update,remove}-route`.
+
+Refer to the help pages of the respective commands for more information.
 
 [browser extension]: https://github.com/lampions/lampions-browser-extension
 [AWS email forwarding guide]: https://aws.amazon.com/blogs/messaging-and-targeting/forward-incoming-email-to-an-external-destination/
 [AWS CLI]: https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html#cli-quick-configuration
 [AWS best practices]: https://docs.aws.amazon.com/IAM/latest/UserGuide/getting-started_create-admin-group.html
+[SES sandbox]: https://docs.aws.amazon.com/ses/latest/DeveloperGuide/request-production-access.html

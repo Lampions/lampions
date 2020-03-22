@@ -239,7 +239,7 @@ def create_route_user(config, args):
 
 
 @lampions.requires_config
-def add_domain(config, args):
+def verify_domain(config, args):
     region = config["region"]
     domain = config["domain"]
 
@@ -455,7 +455,7 @@ def configure_lampions(config, args):
     steps = [
         ("Create S3 bucket", create_s3_bucket),
         ("Create route user", create_route_user),
-        ("Register domain with SES", add_domain),
+        ("Register domain with SES", verify_domain),
         ("Create receipt rule", create_receipt_rule)
     ]
     for i, (description, step) in enumerate(steps, start=1):
@@ -701,11 +701,11 @@ def parse_arguments():
         "and write to the routes file")
     user_parser.set_defaults(command=create_route_user)
 
-    # Subcommand 'configure register-domain'
+    # Subcommand 'configure verify-domain'
     domain_parser = configure_command.add_parser(
-        "register-domain", help="Add a domain to Amazon SES and begin the "
+        "verify-domain", help="Add a domain to Amazon SES and begin the "
         "verification process")
-    domain_parser.set_defaults(command=add_domain)
+    domain_parser.set_defaults(command=verify_domain)
 
     # Subcommand 'configure create-receipt-rule'
     receipt_rule_parser = configure_command.add_parser(
@@ -715,14 +715,14 @@ def parse_arguments():
     receipt_rule_parser.set_defaults(command=create_receipt_rule)
 
     # Command 'add-forward-address'
-    emails_parser = commands.add_parser(
+    forward_parser = commands.add_parser(
         "add-forward-address",
         help="Add address to the list of possible forward addresses")
-    emails_parser.set_defaults(command=add_forward_address)
-    emails_parser.add_argument(
+    forward_parser.set_defaults(command=add_forward_address)
+    forward_parser.add_argument(
         "--region", help="The SES region in which to add the domain",
         required=True, choices=REGIONS)
-    emails_parser.add_argument(
+    forward_parser.add_argument(
         "--address", help="Email address to add to the verification list",
         required=True)
 
