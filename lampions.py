@@ -101,6 +101,10 @@ def _get_account_id():
     return sts.get_caller_identity()["Account"]
 
 
+def _create_lampions_name_prefix(domain):
+    return "Lampions" + "".join(map(str.capitalize, domain.split(".")))
+
+
 @lampions.requires_config
 def create_s3_bucket(config, args):
     region = config["Region"]
@@ -123,11 +127,12 @@ def create_s3_bucket(config, args):
         "Status": "Enabled"
     })
 
+    name_prefix = _create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": f"lampions.{domain}.ses.s3.put",
+                "Sid": f"{name_prefix}SesS3Put",
                 "Effect": "Allow",
                 "Principal": {
                     "Service": "ses.amazonaws.com"
@@ -162,18 +167,20 @@ def _create_routes_file_policy(domain, bucket):
     arn : str
         The arn of the policy.
     """
-    policy_name = f"lampions.{domain}.routes.file.policy",
+    name_prefix = _create_lampions_name_prefix(domain)
+    policy_name = f"{name_prefix}RoutesFilePolicy"
+    name_prefix = _create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": f"lampions.{domain}.s3.list.bucket",
+                "Sid": f"{name_prefix}S3ListBucket",
                 "Effect": "Allow",
                 "Action": "s3:ListBucket",
                 "Resource": f"arn:aws:s3:::{bucket}"
             },
             {
-                "Sid": f"lampions.{domain}.s3.get.put.routes",
+                "Sid": f"{name_prefix}S3GetPutRoutes",
                 "Effect": "Allow",
                 "Action": [
                     "s3:GetObject",
@@ -210,7 +217,8 @@ def create_route_user(config, args):
     bucket = f"lampions.{domain}"
 
     policy_arn = _create_routes_file_policy(domain, bucket)
-    user_name = f"lampions.{domain}.route.user"
+    name_prefix = _create_lampions_name_prefix(domain)
+    user_name = f"{name_prefix}RouteUser"
     iam = boto3.client("iam")
     try:
         iam.create_user(UserName=user_name)
@@ -249,7 +257,7 @@ def verify_domain(config, args):
     config.update(dkim_tokens)
     config.save()
 
-    print(f"DKIM tokens for domain '{domain}' created:")
+    print(f"DKIM tokens for domain '{domain}' created:\n")
     for token in config["DkimTokens"]:
         print(f"  {token}")
     print()
@@ -266,12 +274,14 @@ def verify_domain(config, args):
 
 def _create_lambda_function_role(region, domain, bucket):
     account_id = _get_account_id()
-    policy_name = f"lampions.{domain}.lambda.role.policy"
+    name_prefix = _create_lampions_name_prefix(domain)
+    policy_name = f"{name_prefix}LambdaRolePolicy"
+    name_prefix = _create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
             {
-                "Sid": f"lampions.{domain}.lambda.function.cloudwatch",
+                "Sid": f"{name_prefix}LambdaFunctionCloudwatch",
                 "Effect": "Allow",
                 "Action": [
                     "logs:CreateLogGroup",
@@ -281,19 +291,19 @@ def _create_lambda_function_role(region, domain, bucket):
                 "Resource": "*"
             },
             {
-                "Sid": f"lampions.{domain}.lambda.function.s3.list.bucket",
+                "Sid": f"{name_prefix}LambdaFunctionS3ListBucket",
                 "Effect": "Allow",
                 "Action": "s3:ListBucket",
                 "Resource": f"arn:aws:s3:::{bucket}"
             },
             {
-                "Sid": f"lampions.{domain}.lambda.function.s3.get.bucket",
+                "Sid": f"{name_prefix}LambdaFunctionS3GetBucket",
                 "Effect": "Allow",
                 "Action": "s3:GetObject",
                 "Resource": f"arn:aws:s3:::{bucket}/*"
             },
             {
-                "Sid": f"lampions.{domain}.lambda.function.ses.send.mail",
+                "Sid": f"{name_prefix}LambdaFunctionSesSendMail",
                 "Effect": "Allow",
                 "Action": "ses:SendRawEmail",
                 "Resource": f"arn:aws:ses:{region}:{account_id}:identity/*"
@@ -326,7 +336,7 @@ def _create_lambda_function_role(region, domain, bucket):
     }
     assume_policy_document = json.dumps(assume_policy)
 
-    role_name = f"lampions.{domain}.lambda.function.role"
+    role_name = f"{name_prefix}LambdaFunctionRole"
     try:
         role = iam.create_role(RoleName=role_name,
                                AssumeRolePolicyDocument=assume_policy_document)
@@ -374,7 +384,8 @@ def create_receipt_rule(config, args):
         region, bucket)
 
     # Create the Lambda function.
-    function_name = f"lampions.{domain}.lambda.function"
+    name_prefix = _create_lampions_name_prefix(domain)
+    function_name = f"{name_prefix}LambdaFunction"
     lambda_ = boto3.client("lambda", region_name=region)
     try:
         lambda_function = lambda_.create_function(
@@ -407,13 +418,13 @@ def create_receipt_rule(config, args):
     try:
         lambda_.add_permission(
             FunctionName=function_name,
-            StatementId=f"lampions.{domain}.ses.lambda.invoke.function",
+            StatementId=f"{name_prefix}SesLambdaInvokeFunction",
             Action="lambda:InvokeFunction",
             Principal="ses.amazonaws.com")
     except lambda_.exceptions.ResourceConflictException:
         pass
 
-    rule_set_name = f"lampions.{domain}.receipt.rule.set"
+    rule_set_name = f"{name_prefix}ReceiptRuleSet"
     ses = boto3.client("ses", region_name=region)
     try:
         ses.create_receipt_rule_set(RuleSetName=rule_set_name)
@@ -421,7 +432,7 @@ def create_receipt_rule(config, args):
         pass
 
     rule = {
-        "Name": f"lampions.{domain}.receipt.rule",
+        "Name": f"{name_prefix}ReceiptRule",
         "Enabled": True,
         "TlsPolicy": "Optional",
         "Recipients": [domain],
@@ -453,10 +464,10 @@ def create_receipt_rule(config, args):
 @lampions.requires_config
 def configure_lampions(config, args):
     steps = [
-        ("Create S3 bucket", create_s3_bucket),
-        ("Create route user", create_route_user),
-        ("Register domain with SES", verify_domain),
-        ("Create receipt rule", create_receipt_rule)
+        ("Creating S3 bucket", create_s3_bucket),
+        ("Creating route user", create_route_user),
+        ("Registering domain with SES", verify_domain),
+        ("Creating receipt rule", create_receipt_rule)
     ]
     for i, (description, step) in enumerate(steps, start=1):
         print(f"Step {i}: {description}")
