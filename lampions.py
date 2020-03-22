@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 
-import datetime
+import email.utils
 import functools
+import hashlib
 import io
 import json
 import os
@@ -22,6 +23,10 @@ REGIONS = (
 
 def die_with_message(*args):
     raise SystemExit("Error: " + "\n".join(args))
+
+
+def _dict_to_formatted_json(dictionary):
+    return json.dumps(dictionary, indent=2)
 
 
 class Config(dict):
@@ -50,11 +55,7 @@ class Config(dict):
         super().__setitem__(key, value)
 
     def __str__(self):
-        def _json_serializer(o):
-            if isinstance(o, (datetime.date, datetime.datetime)):
-                return o.isoformat()
-
-        return json.dumps(self, indent=2, default=_json_serializer)
+        return _dict_to_formatted_json(self)
 
     def verify(self):
         for key in self.REQUIRED_KEYS:
@@ -505,6 +506,171 @@ def add_forward_address(config, args):
         print(f"Verification mail sent to '{address}'")
 
 
+def _get_routes(config):
+    region = config["Region"]
+    domain = config["Domain"]
+    bucket = f"lampions.{domain}"
+
+    s3 = boto3.client("s3", region_name=region)
+    response = s3.get_object(Bucket=bucket, Key="routes.json")
+    data = response["Body"].read()
+    try:
+        result = json.loads(data)
+    except json.JSONDecodeError:
+        routes = []
+    else:
+        routes = result["routes"]
+    return routes
+
+
+def _set_routes(config, routes):
+    region = config["Region"]
+    domain = config["Domain"]
+    bucket = f"lampions.{domain}"
+
+    routes_string = _dict_to_formatted_json({"routes": routes})
+    s3 = boto3.client("s3", region_name=region)
+    s3.put_object(Bucket=bucket, Key="routes.json", Body=routes_string)
+
+
+@lampions.requires_config
+def list_routes(config, args):
+    domain = config["Domain"]
+    only_active = args["active"]
+    only_inactive = args["inactive"]
+
+    routes = _get_routes(config)
+    column_widths = {
+        "alias": 0,
+        "forward": 0
+    }
+    for route in routes:
+        for key in column_widths.keys():
+            column_widths[key] = max(len(route[key]), column_widths[key])
+    column_widths["alias"] += len(f"@{domain}")
+
+    def pad_with_spaces(string, num_characters=-1):
+        if num_characters == -1:
+            num_characters = len(string)
+        return string + " " * (num_characters + 4 - len(string))
+
+    print(pad_with_spaces("Address", column_widths["alias"]) +
+          pad_with_spaces("Forward", column_widths["forward"]) +
+          pad_with_spaces("Active"))
+    print(pad_with_spaces("-------", column_widths["alias"]) +
+          pad_with_spaces("-------", column_widths["forward"]) +
+          pad_with_spaces("------"))
+
+    for route in routes:
+        active = route["active"]
+        if only_active and not active:
+            continue
+        if only_inactive and active:
+            continue
+        alias = route["alias"]
+        forward_address = route["forward"]
+        print(pad_with_spaces(f"{alias}@{domain}", column_widths["alias"]) +
+              pad_with_spaces(forward_address, column_widths["forward"]) +
+              pad_with_spaces(f"{'✓' if active else '✗'}"))
+    print()
+
+
+def _verify_forward_address(config, forward_address):
+    if not validate_email(forward_address):
+        die_with_message(f"Invalid email address '{forward_address}'")
+
+    region = config["Region"]
+
+    ses = boto3.client("ses", region_name=region)
+    result = ses.list_identities()
+    forward_addresses = filter(validate_email, result["Identities"])
+    if forward_address not in forward_addresses:
+        die_with_message(
+            f"Forwarding address '{forward_address}' is not verified")
+
+
+@lampions.requires_config
+def add_route(config, args):
+    alias = args["alias"]
+    forward_address = args["forward"]
+    active = not args["inactive"]
+    meta = args["meta"]
+
+    routes = _get_routes(config)
+    for route in routes:
+        if alias == route["alias"]:
+            die_with_message(f"Route for alias '{alias}' already exists")
+
+    _verify_forward_address(config, forward_address)
+
+    created_at = email.utils.formatdate(usegmt=True)
+    route_string = f"{alias}-{forward_address}-{created_at}"
+    hash = hashlib.sha224()
+    hash.update(route_string.encode("utf8"))
+    id_ = hash.hexdigest()
+    route = {
+        "id": id_,
+        "active": active,
+        "alias": alias,
+        "forward": forward_address,
+        "createdAt": created_at,
+        "meta": meta
+    }
+    routes.insert(0, route)
+    _set_routes(config, routes)
+    print(f"Route for alias '{alias}' added")
+
+
+@lampions.requires_config
+def update_route(config, args):
+    alias = args["alias"]
+    forward_address = args["forward"]
+    active = args["active"]
+    inactive = args["inactive"]
+    meta = args["meta"]
+
+    routes = _get_routes(config)
+    for route in routes:
+        if alias == route["alias"]:
+            break
+    else:
+        die_with_message(f"No route with alias '{alias}' found")
+
+    if not forward_address and not active and not inactive and not meta:
+        raise SystemExit("Nothing to do")
+
+    if forward_address:
+        _verify_forward_address(config, forward_address)
+
+    if active:
+        new_active = True
+    elif inactive:
+        new_active = False
+    else:
+        new_active = route["active"]
+    route["active"] = new_active
+    route["forward"] = forward_address or route["forward"]
+    route["meta"] = meta or route["meta"]
+    _set_routes(config, routes)
+    print(f"Route for alias '{alias}' updated")
+
+
+@lampions.requires_config
+def remove_route(config, args):
+    alias = args["alias"]
+
+    routes = _get_routes(config)
+    for i, route in enumerate(routes):
+        if alias == route["alias"]:
+            break
+    else:
+        die_with_message(f"No route found for alias '{alias}'")
+
+    routes.pop(i)
+    _set_routes(config, routes)
+    print(f"Route for alias '{alias}' removed")
+
+
 def parse_arguments():
     parser = ArgumentParser()
     commands = parser.add_subparsers(title="Subcommands", dest="command",
@@ -566,6 +732,54 @@ def parse_arguments():
         required=True, choices=REGIONS)
     emails_parser.add_argument(
         "--address", help="Email address to add to the verification list",
+        required=True)
+
+    list_routes_command = commands.add_parser(
+        "list-routes", help="List defined email routes")
+    list_routes_command.set_defaults(command=list_routes)
+    group = list_routes_command.add_mutually_exclusive_group()
+    group.add_argument("--active", help="List only active routes",
+                       action="store_true")
+    group.add_argument("--inactive", help="List only inactive routes",
+                       action="store_true")
+
+    add_route_command = commands.add_parser("add-route", help="Add new route")
+    add_route_command.set_defaults(command=add_route)
+    add_route_command.add_argument(
+        "--alias", help="Alias (or username) of the new address",
+        required=True)
+    add_route_command.add_argument(
+        "--forward",
+        help="The address to forward emails to (must be a verified address)",
+        required=True)
+    add_route_command.add_argument(
+        "--inactive", help="Make the route inactive by default",
+        action="store_true", default=False)
+    add_route_command.add_argument(
+        "--meta",
+        help="Freeform metadata (comment) to store alongside an alias",
+        default="")
+
+    update_route_command = commands.add_parser(
+        "update-route", help="Modify route configuration")
+    update_route_command.set_defaults(command=update_route)
+    update_route_command.add_argument(
+        "--alias", help="The alias of the route to modify", required=True)
+    group = update_route_command.add_mutually_exclusive_group()
+    group.add_argument(
+        "--active", help="Make the route active", action="store_true")
+    group.add_argument(
+        "--inactive", help="Make the route inactive", action="store_true")
+    update_route_command.add_argument(
+        "--forward", help="New forwarding addresss", default="")
+    update_route_command.add_argument(
+        "--meta", help="New metadata information", default="")
+
+    remove_route_command = commands.add_parser(
+        "remove-route", help="Remove a route")
+    remove_route_command.set_defaults(command=remove_route)
+    remove_route_command.add_argument(
+        "--alias", help="Alias (or username) of the route to remove",
         required=True)
 
     args = vars(parser.parse_args())
