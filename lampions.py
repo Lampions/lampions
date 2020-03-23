@@ -516,7 +516,10 @@ def _get_routes(config):
     bucket = f"lampions.{domain}"
 
     s3 = boto3.client("s3", region_name=region)
-    response = s3.get_object(Bucket=bucket, Key="routes.json")
+    try:
+        response = s3.get_object(Bucket=bucket, Key="routes.json")
+    except s3.exceptions.NoSuchKey:
+        die_with_message("No routes defined yet")
     data = response["Body"].read()
     try:
         result = json.loads(data)
@@ -575,7 +578,7 @@ def list_routes(config, args):
         forward_address = route["forward"]
         print(pad_with_spaces(f"{alias}@{domain}", column_widths["alias"]) +
               pad_with_spaces(forward_address, column_widths["forward"]) +
-              pad_with_spaces(f"{'✓' if active else '✗'}"))
+              pad_with_spaces(f"  {'✓' if active else '✗'}"))
     print()
 
 

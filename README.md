@@ -4,7 +4,7 @@ Lampions is a small project to configure email aliases and handle email
 relaying/forwarding leveraging the AWS infrastructure.
 The goal is to insulate a user's primary email address(es) from services they
 have signed up for by creating dedicated aliases and associated routes used to
-forward emails to private inboxes.
+forward emails to personal inboxes.
 The advantage is that instead of having to manually opt-out of marketing
 emails, Lampions lets users deactivate a route and silently drop such emails.
 Moreover, if an alias suddenly starts receiving spam, it is easy to pinpoint
