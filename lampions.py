@@ -598,6 +598,7 @@ def _verify_forward_address(config, forward_address):
 
 @lampions.requires_config
 def add_route(config, args):
+    domain = config["Domain"]
     alias = args["alias"]
     forward_address = args["forward"]
     active = not args["inactive"]
@@ -608,6 +609,10 @@ def add_route(config, args):
         if alias == route["alias"]:
             die_with_message(f"Route for alias '{alias}' already exists")
 
+    if " " in alias or not validate_email(f"{alias}@{domain}"):
+        die_with_message(f"Invalid alias '{alias}'")
+    if alias == "lampions":
+        die_with_message("The 'lampions' alias is reserved")
     _verify_forward_address(config, forward_address)
 
     created_at = email.utils.formatdate(usegmt=True)
