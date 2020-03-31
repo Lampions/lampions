@@ -1,4 +1,5 @@
 import email
+import hashlib
 import json
 import os
 
@@ -51,6 +52,12 @@ def _determine_forward_addresses(recipients):
     return forward_addresses
 
 
+def _compute_sha224_hash(string):
+    hash = hashlib.sha224()
+    hash.update(string.encode("utf8"))
+    return hash.hexdigest()
+
+
 def _send_message(message_id):
     file = _retrieve_message(message_id).decode("utf8")
     mail = email.message_from_string(file)
@@ -70,6 +77,7 @@ def _send_message(message_id):
         name = f"{original_name} (via) {address}"
     else:
         name = address
+    address_hash = _compute_sha224_hash(address)
     sender = email.utils.formataddr((name, f"lampions@{domain}"))
     mail.replace_header("From", sender)
 

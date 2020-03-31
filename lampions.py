@@ -596,6 +596,12 @@ def _verify_forward_address(config, forward_address):
             f"Forwarding address '{forward_address}' is not verified")
 
 
+def _compute_sha224_hash(string):
+    hash = hashlib.sha224()
+    hash.update(string.encode("utf8"))
+    return hash.hexdigest()
+
+
 @lampions.requires_config
 def add_route(config, args):
     domain = config["Domain"]
@@ -617,9 +623,7 @@ def add_route(config, args):
 
     created_at = email.utils.formatdate(usegmt=True)
     route_string = f"{alias}-{forward_address}-{created_at}"
-    hash = hashlib.sha224()
-    hash.update(route_string.encode("utf8"))
-    id_ = hash.hexdigest()
+    id_ = _compute_sha224_hash(route_string)
     route = {
         "id": id_,
         "active": active,
