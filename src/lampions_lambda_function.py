@@ -52,6 +52,14 @@ def _determine_forward_addresses(recipients):
     return forward_addresses
 
 
+def _get_verified_addresses():
+    region = os.environ["LAMPIONS_REGION"]
+    ses = boto3.client("ses", region_name=region)
+    response = ses.list_identities()
+    identities = response["Identities"]
+    return [identity for identity in identities if "@" in identity]
+
+
 def _compute_sha224_hash(string):
     hash = hashlib.sha224()
     hash.update(string.encode("utf8"))
