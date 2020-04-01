@@ -47,8 +47,9 @@ Lampions.
 1. Addresses in `From` and `Return-Path` headers must be verified in SES.
    This means that we cannot preserve the original `From` header of incoming
    emails.
-   Instead, we always forward emails using the special `lampions@<domain>`
-   address.
+   In order to facilitate bidirectional communication, we always forward emails
+   using addresses of the form `<alias>+<hash>@<domain>` where `<hash>` is the
+   SHA224 hash of the original sender (or `Reply-To` if it is present).
    To reflect the original sender in the forwarded email, we update the headers
    such that
    ```raw
@@ -56,10 +57,12 @@ Lampions.
    ```
    becomes
    ```raw
-   From: Art Vandelay (via) art@vandelay-industries.com <lampions@<domain>
+   From: Art Vandelay (via) art@vandelay-industries.com <alias>+<hash>@<domain>
    ```
-   The `Reply-To` header is left untouched if it was present in the original
-   email.
+   When replying to such a forwarded email from a verified SES address, the
+   hash is used to resolve the information about the original sender of the
+   forwarded email.
+   The reply is then relayed via the original route address `<alias>@<domain>`.
 
 ## Setup
 
