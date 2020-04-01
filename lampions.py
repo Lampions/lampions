@@ -22,6 +22,10 @@ REGIONS = (
 )
 
 
+def quit_with_message(*args):
+    raise SystemExit("\n".join(args))
+
+
 def die_with_message(*args):
     raise SystemExit("Error: " + "\n".join(args))
 
@@ -156,11 +160,11 @@ def create_s3_bucket(config, args):
     print(f"Created S3 bucket '{bucket}")
 
 
-def _create_routes_file_policy(domain, bucket):
+def _create_routes_and_recipients_file_policy(domain, bucket):
     """Create policy for the routes file.
 
-    Create a policy that allows reading and writing to the ``routes.json`` file
-    inside the S3 bucket ``bucket``.
+    Create a policy that allows reading and writing to the ``routes.json`` and
+    ``recipients.json`` files inside the S3 bucket ``bucket``.
 
     Returns:
     --------
@@ -168,7 +172,7 @@ def _create_routes_file_policy(domain, bucket):
         The arn of the policy.
     """
     name_prefix = _create_lampions_name_prefix(domain)
-    policy_name = f"{name_prefix}RoutesFilePolicy"
+    policy_name = f"{name_prefix}RoutesAndRecipientsFilePolicy"
     name_prefix = _create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
@@ -186,7 +190,10 @@ def _create_routes_file_policy(domain, bucket):
                     "s3:GetObject",
                     "s3:PutObject"
                 ],
-                "Resource": f"arn:aws:s3:::{bucket}/routes.json",
+                "Resource": [
+                    f"arn:aws:s3:::{bucket}/routes.json",
+                    f"arn:aws:s3:::{bucket}/recipients.json"
+                ]
             }
         ]
     }
@@ -200,7 +207,7 @@ def _create_routes_file_policy(domain, bucket):
         account_id = _get_account_id()
         arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
     except Exception as exception:
-        die_with_message(f"Failed to create routes file policy:",
+        die_with_message(f"Failed to create routes and recipient file policy:",
                          str(exception))
     else:
         arn = policy["Policy"]["Arn"]
@@ -216,7 +223,7 @@ def create_route_user(config, args):
     domain = config["Domain"]
     bucket = f"lampions.{domain}"
 
-    policy_arn = _create_routes_file_policy(domain, bucket)
+    policy_arn = _create_routes_and_recipients_file_policy(domain, bucket)
     name_prefix = _create_lampions_name_prefix(domain)
     user_name = f"{name_prefix}RouteUser"
     iam = boto3.client("iam")
@@ -531,7 +538,7 @@ def _get_routes(config):
     try:
         response = s3.get_object(Bucket=bucket, Key="routes.json")
     except s3.exceptions.NoSuchKey:
-        die_with_message("No routes defined yet")
+        quit_with_message("No routes defined yet")
     data = response["Body"].read()
     try:
         result = json.loads(data)
@@ -665,7 +672,7 @@ def update_route(config, args):
         die_with_message(f"No route with alias '{alias}' found")
 
     if not forward_address and not active and not inactive and not meta:
-        raise SystemExit("Nothing to do")
+        quit_with_message("Nothing to do")
 
     if forward_address:
         _verify_forward_address(config, forward_address)
@@ -697,6 +704,61 @@ def remove_route(config, args):
     routes.pop(i)
     _set_routes(config, routes)
     print(f"Route for alias '{alias}' removed")
+
+
+@lampions.requires_config
+def list_recipients(config, args):
+    region = config["Region"]
+    domain = config["Domain"]
+    bucket = f"lampions.{domain}"
+
+    alias = args.get("alias")
+    address = args.get("address")
+
+    s3 = boto3.client("s3", region_name=region)
+    try:
+        response = s3.get_object(Bucket=bucket, Key="recipients.json")
+    except s3.exceptions.NoSuchKey:
+        quit_with_message("No recipient mapping defined yet")
+    data = response["Body"].read()
+    try:
+        result = json.loads(data)
+    except json.JSONDecodeError:
+        recipients = {}
+    else:
+        recipients = result["recipients"]
+
+    if alias is not None:
+        recipients_for_alias = recipients.get(alias)
+        if recipients_for_alias is None:
+            quit_with_message(f"No recipients for alias '{alias}' defined yet")
+        quit_with_message(_dict_to_formatted_json(recipients_for_alias))
+
+    if address is not None:
+        try:
+            name, forward_domain = address.split("@")
+        except ValueError:
+            die_with_message(f"Invalid address '{address}'")
+        if forward_domain != domain:
+            die_with_message(f"Invalid domain '{forward_domain}'")
+
+        try:
+            alias, hash_ = name.split("+")
+        except ValueError:
+            die_with_message(
+                "Invalid address. Must be of the form "
+                "'<alias>+<hash>@<domain>'.")
+        recipients_for_alias = recipients.get(alias)
+        if recipients_for_alias is None:
+            quit_with_message(f"No recipients for alias '{alias}' defined yet")
+        recipient = recipients_for_alias.get(hash_)
+        if recipient is None:
+            die_with_message(
+                f"Failed to resolve recipient for address '{address}'")
+        quit_with_message(f"{address}  →  {recipient}")
+
+    # Neither alias nor address given, so print all recipients.
+    quit_with_message(_dict_to_formatted_json(recipients))
 
 
 def parse_arguments():
@@ -806,6 +868,17 @@ def parse_arguments():
     remove_route_command.add_argument(
         "--alias", help="Alias (or username) of the route to remove",
         required=True)
+
+    recipients_commands = commands.add_parser(
+        "list-recipients", help="List recipient addresses")
+    recipients_commands.set_defaults(command=list_recipients)
+    group = recipients_commands.add_mutually_exclusive_group()
+    group.add_argument(
+        "--alias", help="Limit recipient addresses to a specific alias")
+    group.add_argument(
+        "--address",
+        help="Only show the recipient for a particular forwarding address of "
+        "the form '<alias>+<hash>@<domain>'")
 
     args = vars(parser.parse_args())
     return {key: value for key, value in args.items() if value is not None}
