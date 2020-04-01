@@ -106,7 +106,7 @@ def _set_recipient_relations(recipients):
     recipients_string = _dict_to_formatted_json({"recipients": recipients})
     s3 = boto3.client("s3", region_name=region)
     s3.put_object(Bucket=bucket, Key="recipients.json",
-                   Body=recipients_string)
+                  Body=recipients_string)
 
 
 def _get_recipient_by_hash(alias, address_hash):
@@ -194,7 +194,7 @@ def _send_message(message_id):
             name = f"{origin_name} (via) {origin_address}"
         else:
             name = origin_address
-        alias, forward_address = _determine_forward_address(mail.get_all("To"))
+        alias, forward_address = _determine_forward_address(recipients)
         sender_address = _add_recipient_relation(
             alias, origin_address, reply_to)
         sender = email.utils.formataddr((name, sender_address))

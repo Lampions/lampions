@@ -304,6 +304,18 @@ def _create_lambda_function_role(region, domain, bucket):
                 "Resource": f"arn:aws:s3:::{bucket}/*"
             },
             {
+                "Sid": f"{name_prefix}LambdaFunctionS3WriteRecipients",
+                "Effect": "Allow",
+                "Action": "s3:PutObject",
+                "Resource": f"arn:aws:s3:::{bucket}/recipients.json"
+            },
+            {
+                "Sid": f"{name_prefix}LambdaFunctionSesListIdentities",
+                "Effect": "Allow",
+                "Action": "ses:ListIdentities",
+                "Resource": "*"
+            },
+            {
                 "Sid": f"{name_prefix}LambdaFunctionSesSendMail",
                 "Effect": "Allow",
                 "Action": "ses:SendRawEmail",
