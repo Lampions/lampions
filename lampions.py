@@ -636,8 +636,6 @@ def add_route(config, args):
 
     if " " in alias or not validate_email(f"{alias}@{domain}"):
         die_with_message(f"Invalid alias '{alias}'")
-    if alias == "lampions":
-        die_with_message("The 'lampions' alias is reserved")
     _verify_forward_address(config, forward_address)
 
     created_at = email.utils.formatdate(usegmt=True)
