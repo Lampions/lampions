@@ -159,7 +159,7 @@ def _send_message(message_id):
         "DKIM-Signature",
         # We don't need to distinguish between 'From' and 'Sender' headers.
         "Sender",
-        # No matter whether we're forwarding or sendign a reply email, we
+        # No matter whether we're forwarding or sending a reply email, we
         # always want to use the 'From' header as 'Reply-To' header, so just
         # remove the latter.
         "Reply-To",
