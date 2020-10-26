@@ -5,6 +5,8 @@ import os
 
 import boto3
 
+HASH_PREFIX_LENGTH = 8
+
 
 def _retrieve_message(message_id):
     domain = os.environ["LAMPIONS_DOMAIN"]
@@ -74,7 +76,7 @@ def _get_verified_addresses():
 def _compute_sha224_hash(string):
     hash = hashlib.sha224()
     hash.update(string.encode("utf8"))
-    return hash.hexdigest()
+    return hash.hexdigest()[:HASH_PREFIX_LENGTH]
 
 
 def _get_recipient_relations():
