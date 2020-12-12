@@ -2,7 +2,6 @@
 
 import email.utils
 import functools
-import hashlib
 import io
 import json
 import os
@@ -11,6 +10,8 @@ from argparse import ArgumentParser
 
 import boto3
 from validate_email import validate_email
+
+from . import utils
 
 EXECUTABLE = os.path.basename(__file__)
 CONFIG_PATH = os.path.expanduser("~/.config/lampions/config.json")
@@ -30,22 +31,18 @@ def die_with_message(*args):
     raise SystemExit("Error: " + "\n".join(args))
 
 
-def _dict_to_formatted_json(dictionary):
-    return json.dumps(dictionary, indent=2)
-
-
 class Config(dict):
     REQUIRED_KEYS = ("Region", "Domain")
     VALID_KEYS = ("AccessKeyId", "SecretAccessKey", "DkimTokens")
 
     def __init__(self, file_path):
         super().__init__()
-        self._file_path = file_path
-        self._read()
+        self.file_path = file_path
+        self.read()
 
-    def _read(self):
-        if os.path.isfile(self._file_path):
-            with open(self._file_path) as f:
+    def read(self):
+        if os.path.isfile(self.file_path):
+            with open(self.file_path) as f:
                 try:
                     config = json.loads(f.read())
                 except json.JSONDecodeError:
@@ -60,7 +57,7 @@ class Config(dict):
         super().__setitem__(key, value)
 
     def __str__(self):
-        return _dict_to_formatted_json(self)
+        return utils.dict_to_formatted_json(self)
 
     def verify(self):
         for key in self.REQUIRED_KEYS:
@@ -74,24 +71,24 @@ class Config(dict):
 
     def save(self):
         self.verify()
-        config_directory = os.path.dirname(self._file_path)
+        config_directory = os.path.dirname(self.file_path)
         os.makedirs(config_directory, exist_ok=True)
-        with open(self._file_path, "w") as f:
+        with open(self.file_path, "w") as f:
             f.write(str(self))
-        os.chmod(self._file_path, 0o600)
+        os.chmod(self.file_path, 0o600)
 
 
 class Lampions:
     def __init__(self):
-        self._config = None
+        self.config = None
 
     def requires_config(self, function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
-            if self._config is None:
-                self._config = config = Config(CONFIG_PATH)
+            if self.config is None:
+                self.config = config = Config(CONFIG_PATH)
             else:
-                config = self._config
+                config = self.config
             config.verify()
             return function(config, *args, **kwargs)
         return wrapper
@@ -100,12 +97,12 @@ class Lampions:
 lampions = Lampions()
 
 
-def _get_account_id():
+def get_account_id():
     sts = boto3.client("sts")
     return sts.get_caller_identity()["Account"]
 
 
-def _create_lampions_name_prefix(domain):
+def create_lampions_name_prefix(domain):
     return "Lampions" + "".join(map(str.capitalize, domain.split(".")))
 
 
@@ -131,7 +128,7 @@ def create_s3_bucket(config, args):
         "Status": "Enabled"
     })
 
-    name_prefix = _create_lampions_name_prefix(domain)
+    name_prefix = create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -145,7 +142,7 @@ def create_s3_bucket(config, args):
                 "Resource": f"arn:aws:s3:::{bucket}/inbox/*",
                 "Condition": {
                     "StringEquals": {
-                        "aws:Referer": _get_account_id()
+                        "aws:Referer": get_account_id()
                     }
                 }
             }
@@ -160,7 +157,7 @@ def create_s3_bucket(config, args):
     print(f"Created S3 bucket '{bucket}")
 
 
-def _create_routes_and_recipients_file_policy(domain, bucket):
+def create_routes_and_recipients_file_policy(domain, bucket):
     """Create policy for the routes file.
 
     Create a policy that allows reading and writing to the ``routes.json`` and
@@ -171,9 +168,9 @@ def _create_routes_and_recipients_file_policy(domain, bucket):
     arn : str
         The arn of the policy.
     """
-    name_prefix = _create_lampions_name_prefix(domain)
+    name_prefix = create_lampions_name_prefix(domain)
     policy_name = f"{name_prefix}RoutesAndRecipientsFilePolicy"
-    name_prefix = _create_lampions_name_prefix(domain)
+    name_prefix = create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -204,10 +201,10 @@ def _create_routes_and_recipients_file_policy(domain, bucket):
             PolicyName=policy_name,
             PolicyDocument=policy_document)
     except iam.exceptions.EntityAlreadyExistsException:
-        account_id = _get_account_id()
+        account_id = get_account_id()
         arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
     except Exception as exception:
-        die_with_message(f"Failed to create routes and recipient file policy:",
+        die_with_message("Failed to create routes and recipient file policy:",
                          str(exception))
     else:
         arn = policy["Policy"]["Arn"]
@@ -223,8 +220,8 @@ def create_route_user(config, args):
     domain = config["Domain"]
     bucket = f"lampions.{domain}"
 
-    policy_arn = _create_routes_and_recipients_file_policy(domain, bucket)
-    name_prefix = _create_lampions_name_prefix(domain)
+    policy_arn = create_routes_and_recipients_file_policy(domain, bucket)
+    name_prefix = create_lampions_name_prefix(domain)
     user_name = f"{name_prefix}RouteUser"
     iam = boto3.client("iam")
     try:
@@ -280,11 +277,11 @@ def verify_domain(config, args):
           "to the DNS settings.")
 
 
-def _create_lambda_function_role(region, domain, bucket):
-    account_id = _get_account_id()
-    name_prefix = _create_lampions_name_prefix(domain)
+def create_lambda_function_role(region, domain, bucket):
+    account_id = get_account_id()
+    name_prefix = create_lampions_name_prefix(domain)
     policy_name = f"{name_prefix}LambdaRolePolicy"
-    name_prefix = _create_lampions_name_prefix(domain)
+    name_prefix = create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -368,17 +365,17 @@ def _create_lambda_function_role(region, domain, bucket):
     return role_arn
 
 
-def _put_object_zip(file_path, region, bucket):
+def put_objects_zip(file_paths, zip_filename, region, bucket):
     byte_stream = io.BytesIO()
-    filename = os.path.basename(file_path)
     with zipfile.ZipFile(byte_stream, mode="a") as archive:
-        with open(file_path, "rb") as f:
-            info = zipfile.ZipInfo(filename)
-            info.external_attr = 0o644 << 16
-            archive.writestr(info, f.read())
+        for file_path in file_paths:
+            filename = os.path.basename(file_path)
+            with open(file_path, "rb") as f:
+                info = zipfile.ZipInfo(filename)
+                info.external_attr = 0o644 << 16
+                archive.writestr(info, f.read())
     byte_stream.seek(0)
 
-    zip_filename = f"{os.path.splitext(filename)[0]}.zip"
     s3 = boto3.client("s3", region_name=region)
     s3.upload_fileobj(
         byte_stream,
@@ -394,17 +391,20 @@ def create_receipt_rule(config, args):
     bucket = f"lampions.{domain}"
 
     # Create policy for the Lambda function.
-    role_arn = _create_lambda_function_role(region, domain, bucket)
+    role_arn = create_lambda_function_role(region, domain, bucket)
 
     # Upload the code of the Lambda function to the Lampions bucket.
     directory = os.path.realpath(os.path.dirname(__file__))
     lambda_function_basename = "lampions_lambda_function"
-    lambda_function_filename = _put_object_zip(
-        os.path.join(directory, "src", f"{lambda_function_basename}.py"),
-        region, bucket)
+    lambda_files = [
+        os.path.join(directory, "src", filename)
+        for filename in [f"{lambda_function_basename}.py", "utils.py"]
+    ]
+    lambda_function_filename = put_objects_zip(
+        lambda_files, "lambda.zip", region, bucket)
 
     # Create the Lambda function.
-    name_prefix = _create_lampions_name_prefix(domain)
+    name_prefix = create_lampions_name_prefix(domain)
     function_name = f"{name_prefix}LambdaFunction"
     lambda_ = boto3.client("lambda", region_name=region)
     try:
@@ -529,7 +529,7 @@ def add_forward_address(config, args):
         print(f"Verification mail sent to '{address}'")
 
 
-def _get_routes(config):
+def get_routes(config):
     region = config["Region"]
     domain = config["Domain"]
     bucket = f"lampions.{domain}"
@@ -549,12 +549,12 @@ def _get_routes(config):
     return routes
 
 
-def _set_routes(config, routes):
+def set_routes(config, routes):
     region = config["Region"]
     domain = config["Domain"]
     bucket = f"lampions.{domain}"
 
-    routes_string = _dict_to_formatted_json({"routes": routes})
+    routes_string = utils.dict_to_formatted_json({"routes": routes})
     s3 = boto3.client("s3", region_name=region)
     s3.put_object(Bucket=bucket, Key="routes.json", Body=routes_string)
 
@@ -565,7 +565,7 @@ def list_routes(config, args):
     only_active = args["active"]
     only_inactive = args["inactive"]
 
-    routes = _get_routes(config)
+    routes = get_routes(config)
     column_widths = {
         "alias": 0,
         "forward": 0
@@ -601,7 +601,7 @@ def list_routes(config, args):
     print()
 
 
-def _verify_forward_address(config, forward_address):
+def verify_forward_address(config, forward_address):
     if not validate_email(forward_address):
         die_with_message(f"Invalid email address '{forward_address}'")
 
@@ -615,12 +615,6 @@ def _verify_forward_address(config, forward_address):
             f"Forwarding address '{forward_address}' is not verified")
 
 
-def _compute_sha224_hash(string):
-    hash = hashlib.sha224()
-    hash.update(string.encode("utf8"))
-    return hash.hexdigest()
-
-
 @lampions.requires_config
 def add_route(config, args):
     domain = config["Domain"]
@@ -629,18 +623,18 @@ def add_route(config, args):
     active = not args["inactive"]
     meta = args["meta"]
 
-    routes = _get_routes(config)
+    routes = get_routes(config)
     for route in routes:
         if alias == route["alias"]:
             die_with_message(f"Route for alias '{alias}' already exists")
 
     if " " in alias or not validate_email(f"{alias}@{domain}"):
         die_with_message(f"Invalid alias '{alias}'")
-    _verify_forward_address(config, forward_address)
+    verify_forward_address(config, forward_address)
 
     created_at = email.utils.formatdate(usegmt=True)
     route_string = f"{alias}-{forward_address}-{created_at}"
-    id_ = _compute_sha224_hash(route_string)
+    id_ = utils.compute_sha224_hash(route_string)
     route = {
         "id": id_,
         "active": active,
@@ -650,7 +644,7 @@ def add_route(config, args):
         "meta": meta
     }
     routes.insert(0, route)
-    _set_routes(config, routes)
+    set_routes(config, routes)
     print(f"Route for alias '{alias}' added")
 
 
@@ -662,7 +656,7 @@ def update_route(config, args):
     inactive = args["inactive"]
     meta = args["meta"]
 
-    routes = _get_routes(config)
+    routes = get_routes(config)
     for route in routes:
         if alias == route["alias"]:
             break
@@ -673,7 +667,7 @@ def update_route(config, args):
         quit_with_message("Nothing to do")
 
     if forward_address:
-        _verify_forward_address(config, forward_address)
+        verify_forward_address(config, forward_address)
 
     if active:
         new_active = True
@@ -684,7 +678,7 @@ def update_route(config, args):
     route["active"] = new_active
     route["forward"] = forward_address or route["forward"]
     route["meta"] = meta or route["meta"]
-    _set_routes(config, routes)
+    set_routes(config, routes)
     print(f"Route for alias '{alias}' updated")
 
 
@@ -692,7 +686,7 @@ def update_route(config, args):
 def remove_route(config, args):
     alias = args["alias"]
 
-    routes = _get_routes(config)
+    routes = get_routes(config)
     for i, route in enumerate(routes):
         if alias == route["alias"]:
             break
@@ -700,8 +694,19 @@ def remove_route(config, args):
         die_with_message(f"No route found for alias '{alias}'")
 
     routes.pop(i)
-    _set_routes(config, routes)
+    set_routes(config, routes)
     print(f"Route for alias '{alias}' removed")
+
+
+def resolve_forward_addresses(hash_address_mapping, domain):
+    addresses = {}
+    for alias, recipients_for_alias in hash_address_mapping.items():
+        recipients = {}
+        for address_hash, recipient in recipients_for_alias.items():
+            recipients[
+                utils.format_address(alias, address_hash, domain)] = recipient
+        addresses[alias] = recipients
+    return addresses
 
 
 @lampions.requires_config
@@ -730,7 +735,9 @@ def list_recipients(config, args):
         recipients_for_alias = recipients.get(alias)
         if recipients_for_alias is None:
             quit_with_message(f"No recipients for alias '{alias}' defined yet")
-        quit_with_message(_dict_to_formatted_json(recipients_for_alias))
+        addresses = resolve_forward_addresses(
+            {alias: recipients_for_alias}, domain)
+        quit_with_message(utils.dict_to_formatted_json(addresses))
 
     if address is not None:
         try:
@@ -741,22 +748,23 @@ def list_recipients(config, args):
             die_with_message(f"Invalid domain '{forward_domain}'")
 
         try:
-            alias, hash_ = name.split("+")
+            alias, address_hash = name.split("+")
         except ValueError:
             die_with_message(
                 "Invalid address. Must be of the form "
-                "'<alias>+<hash>@<domain>'.")
+                "'<alias>+<address_hash>@<domain>'.")
         recipients_for_alias = recipients.get(alias)
         if recipients_for_alias is None:
             quit_with_message(f"No recipients for alias '{alias}' defined yet")
-        recipient = recipients_for_alias.get(hash_)
+        recipient = recipients_for_alias.get(address_hash)
         if recipient is None:
             die_with_message(
                 f"Failed to resolve recipient for address '{address}'")
         quit_with_message(f"{address}  →  {recipient}")
 
     # Neither alias nor address given, so print all recipients.
-    quit_with_message(_dict_to_formatted_json(recipients))
+    addresses = resolve_forward_addresses(recipients, domain)
+    quit_with_message(utils.dict_to_formatted_json(addresses))
 
 
 def parse_arguments():
