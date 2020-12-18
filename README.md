@@ -1,6 +1,6 @@
 # Lampions
 
-Lampions is a small project to configure email aliases and handle email
+Lampions is a project to configure email aliases and handle email
 relaying/forwarding leveraging the AWS infrastructure.
 The goal is to insulate a user's primary email address(es) from services they
 have signed up for by creating dedicated aliases and associated routes used to
@@ -12,8 +12,8 @@ the service which leaked the address in the first place.
 
 The core functionality of Lampions is built on top of AWS Simple Email Service
 (SES), S3 and AWS Lambda.
-The service is complemented by a small [browser extension] to quickly define
-new email aliases, change forward addresses or enable/disable individual email
+The service is complemented by a [browser extension] to quickly define new
+email aliases, change forward addresses or enable/disable individual email
 routes.
 This repository describes the underlying architecture, and provides a
 command-line utility to define and configure the necessary AWS infrastructure.

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import email.utils
 import functools
 import io
@@ -395,13 +393,13 @@ def create_receipt_rule(config, args):
 
     # Upload the code of the Lambda function to the Lampions bucket.
     directory = os.path.realpath(os.path.dirname(__file__))
-    lambda_function_basename = "lampions_lambda_function"
+    lambda_function_basename = "lambda"
     lambda_files = [
         os.path.join(directory, "src", filename)
         for filename in [f"{lambda_function_basename}.py", "utils.py"]
     ]
     lambda_function_filename = put_objects_zip(
-        lambda_files, "lambda.zip", region, bucket)
+        lambda_files, "{lambda_function_basename}.zip", region, bucket)
 
     # Create the Lambda function.
     name_prefix = create_lampions_name_prefix(domain)
@@ -768,7 +766,7 @@ def list_recipients(config, args):
 
 
 def parse_arguments():
-    parser = ArgumentParser()
+    parser = ArgumentParser("lampions")
     commands = parser.add_subparsers(title="Subcommands", dest="command",
                                      required=True)
 
@@ -890,6 +888,6 @@ def parse_arguments():
     return {key: value for key, value in args.items() if value is not None}
 
 
-if __name__ == "__main__":
+def run():
     args = parse_arguments()
     args["command"](args)
