@@ -2,7 +2,6 @@ import email.utils
 import functools
 import io
 import json
-import os
 import zipfile
 from argparse import ArgumentParser
 from pathlib import Path
@@ -71,10 +70,10 @@ class Config(dict):
     def save(self):
         self.verify()
         config_directory = self.file_path.parent
-        os.makedirs(config_directory, exist_ok=True)
+        config_directory.mkdir(parents=True, exist_ok=True)
         with open(self.file_path, "w") as f:
             f.write(str(self))
-        os.chmod(self.file_path, 0o600)
+        self.file_path.chmod(0o600)
 
 
 class Lampions:
