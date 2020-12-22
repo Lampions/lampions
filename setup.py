@@ -23,7 +23,7 @@ if __name__ == "__main__":
         name="lampions",
         version=version["__version__"],
         install_requires=install_requires,
-        description=("Command-line utility to configure and control Lampions "
+        description=("Command-line utility to configure Lampions and manage "
                      "email aliases"),
         url="http://github.com/lampions/lampions",
         author="Niklas Koep",
