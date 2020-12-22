@@ -1,11 +1,11 @@
-import os
+import pathlib
 import runpy
 
 from setuptools import find_packages, setup
 
-base_directory = os.path.dirname(os.path.abspath(__file__))
-version = runpy.run_path(
-    os.path.join(base_directory, "lampions", "version.py"))
+
+base_directory = pathlib.Path(__file__).resolve().parent
+version = runpy.run_path(base_directory / "lampions" / "version.py")
 
 
 def parse_requirements_file(filename):
@@ -16,7 +16,7 @@ def parse_requirements_file(filename):
 if __name__ == "__main__":
     install_requires = parse_requirements_file("requirements.txt")
 
-    with open(os.path.join(base_directory, "README.md")) as f:
+    with open(base_directory / "README.md") as f:
         long_description = f.read()
 
     setup(

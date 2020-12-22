@@ -5,14 +5,15 @@ import json
 import os
 import zipfile
 from argparse import ArgumentParser
+from pathlib import Path
 
 import boto3
 from validate_email import validate_email
 
 from . import utils
 
-EXECUTABLE = os.path.basename(__file__)
-CONFIG_PATH = os.path.expanduser("~/.config/lampions/config.json")
+EXECUTABLE = Path(__file__).name
+CONFIG_PATH = Path("~/.config/lampions/config.json").expanduser()
 
 REGIONS = (
     "eu-west-1",
@@ -35,11 +36,11 @@ class Config(dict):
 
     def __init__(self, file_path):
         super().__init__()
-        self.file_path = file_path
+        self.file_path = Path(file_path)
         self.read()
 
     def read(self):
-        if os.path.isfile(self.file_path):
+        if self.file_path.is_file():
             with open(self.file_path) as f:
                 try:
                     config = json.loads(f.read())
@@ -69,7 +70,7 @@ class Config(dict):
 
     def save(self):
         self.verify()
-        config_directory = os.path.dirname(self.file_path)
+        config_directory = self.file_path.parent
         os.makedirs(config_directory, exist_ok=True)
         with open(self.file_path, "w") as f:
             f.write(str(self))
@@ -367,7 +368,7 @@ def put_objects_zip(file_paths, zip_filename, region, bucket):
     byte_stream = io.BytesIO()
     with zipfile.ZipFile(byte_stream, mode="a") as archive:
         for file_path in file_paths:
-            filename = os.path.basename(file_path)
+            filename = Path(file_path).name
             with open(file_path, "rb") as f:
                 info = zipfile.ZipInfo(filename)
                 info.external_attr = 0o644 << 16
@@ -392,10 +393,10 @@ def create_receipt_rule(config, args):
     role_arn = create_lambda_function_role(region, domain, bucket)
 
     # Upload the code of the Lambda function to the Lampions bucket.
-    directory = os.path.realpath(os.path.dirname(__file__))
+    directory = Path(__file__).resolve().parent
     lambda_function_basename = "lambda"
     lambda_files = [
-        os.path.join(directory, "src", filename)
+        directory / "src" / filename
         for filename in [f"{lambda_function_basename}.py", "utils.py"]
     ]
     lambda_function_filename = put_objects_zip(
