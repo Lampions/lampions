@@ -20,7 +20,7 @@ if __name__ == "__main__":
         long_description = f.read()
 
     setup(
-        name="Lampions",
+        name="lampions",
         version=version["__version__"],
         install_requires=install_requires,
         description=("Command-line utility to configure and control Lampions "
