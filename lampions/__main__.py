@@ -1,9 +1,4 @@
-from . import console
+import lampions
 
 
-def main():
-    console.run()
-
-
-if __name__ == "__main__":
-    main()
+lampions.main()
