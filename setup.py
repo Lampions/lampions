@@ -9,8 +9,7 @@ version = runpy.run_path(base_directory / "lampions" / "version.py")
 
 
 def parse_requirements_file(filename):
-    with open(filename) as input_file:
-        return input_file.read().splitlines()
+    return pathlib.Path(filename).read_text().splitlines()
 
 
 if __name__ == "__main__":

@@ -71,8 +71,7 @@ class Config(dict):
         self.verify()
         config_directory = self.file_path.parent
         config_directory.mkdir(parents=True, exist_ok=True)
-        with open(self.file_path, "w") as f:
-            f.write(str(self))
+        self.file_path.write_text(str(self))
         self.file_path.chmod(0o600)
 
 
