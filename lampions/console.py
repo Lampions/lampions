@@ -5,6 +5,7 @@ import json
 import zipfile
 from argparse import ArgumentParser
 from pathlib import Path
+from pydoc import pager
 
 import boto3
 from validate_email import validate_email
@@ -21,8 +22,12 @@ REGIONS = (
 )
 
 
-def quit_with_message(*args):
-    raise SystemExit("\n".join(args))
+def quit_with_message(*args, use_pager=False):
+    text = "\n".join(args)
+    if use_pager:
+        pager(text)
+        text = None
+    raise SystemExit(text)
 
 
 def die_with_message(*args):
@@ -577,12 +582,13 @@ def list_routes(config, args):
             num_characters = len(string)
         return string + " " * (num_characters + 4 - len(string))
 
+    stream = io.StringIO()
     print(pad_with_spaces("Address", column_widths["alias"]) +
           pad_with_spaces("Forward", column_widths["forward"]) +
-          pad_with_spaces("Active"))
+          pad_with_spaces("Active"), file=stream)
     print(pad_with_spaces("-------", column_widths["alias"]) +
           pad_with_spaces("-------", column_widths["forward"]) +
-          pad_with_spaces("------"))
+          pad_with_spaces("------"), file=stream)
 
     for route in routes:
         active = route["active"]
@@ -594,8 +600,8 @@ def list_routes(config, args):
         forward_address = route["forward"]
         print(pad_with_spaces(f"{alias}@{domain}", column_widths["alias"]) +
               pad_with_spaces(forward_address, column_widths["forward"]) +
-              pad_with_spaces(f"  {'✓' if active else '✗'}"))
-    print()
+              pad_with_spaces(f"  {'✓' if active else '✗'}"), file=stream)
+    quit_with_message(stream.getvalue(), use_pager=True)
 
 
 def verify_forward_address(config, forward_address):
@@ -734,7 +740,8 @@ def list_recipients(config, args):
             quit_with_message(f"No recipients for alias '{alias}' defined yet")
         addresses = resolve_forward_addresses(
             {alias: recipients_for_alias}, domain)
-        quit_with_message(utils.dict_to_formatted_json(addresses))
+        quit_with_message(utils.dict_to_formatted_json(addresses),
+                          use_pager=True)
 
     if address is not None:
         try:
@@ -757,11 +764,11 @@ def list_recipients(config, args):
         if recipient is None:
             die_with_message(
                 f"Failed to resolve recipient for address '{address}'")
-        quit_with_message(f"{address}  →  {recipient}")
+        quit_with_message(f"{address}  →  {recipient}", use_pager=True)
 
     # Neither alias nor address given, so print all recipients.
     addresses = resolve_forward_addresses(recipients, domain)
-    quit_with_message(utils.dict_to_formatted_json(addresses))
+    quit_with_message(utils.dict_to_formatted_json(addresses), use_pager=True)
 
 
 def parse_arguments():
