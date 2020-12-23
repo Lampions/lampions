@@ -26,8 +26,9 @@ def quit_with_message(*args, use_pager=False):
     text = "\n".join(args)
     if use_pager:
         pager(text)
-        text = None
-    raise SystemExit(text)
+    else:
+        print(text)
+    raise SystemExit
 
 
 def die_with_message(*args):
