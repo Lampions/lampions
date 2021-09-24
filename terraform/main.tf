@@ -28,7 +28,7 @@ variable "domain" {
 
 # Local variables.
 locals {
-  lampions_prefix = join("", [for part in split(".", var.domain) : title(part)])
+  lampions_prefix = format("Lampions%s", join("", [for part in split(".", var.domain) : title(part)]))
 }
 
 provider "aws" {
