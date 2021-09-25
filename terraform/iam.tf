@@ -9,7 +9,7 @@ data "aws_iam_policy_document" "lampions_iam_route_user_policy_document" {
     sid       = "${local.lampions_prefix}S3ListBucket"
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
-    resources = ["${aws_s3_bucket.lampions_s3_bucket.arn}"]
+    resources = [aws_s3_bucket.lampions_s3_bucket.arn]
   }
 
   statement {
