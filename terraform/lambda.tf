@@ -42,7 +42,23 @@ data "aws_iam_policy_document" "lampions_lambda_role_policy_document" {
 }
 
 # Lambda role policy.
-resource "aws_iam_policy" "lampions_lambda_role_policy" {
-  name = "${local.lampions_prefix}LambdaRolePolicy"
-  policy = data.aws_iam_policy_document.lampions_lambda_role_policy_document.json
+data "aws_iam_policy_document" "lampions_lambda_assume_role_policy" {
+  statement {
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+    actions = ["sts:AssumeRole"]
+  }
+}
+
+# Lambda role.
+resource "aws_iam_role" "lampions_lambda_role" {
+  name               = "${local.lampions_prefix}LambdaFunctionRole"
+  assume_role_policy = data.aws_iam_policy_document.lampions_lambda_assume_role_policy.json
+  inline_policy {
+    name   = "${local.lampions_prefix}LambdaRolePolicy"
+    policy = data.aws_iam_policy_document.lampions_lambda_role_policy_document.json
+  }
 }
