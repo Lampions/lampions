@@ -11,7 +11,7 @@ output "AccessKeyId" {
 }
 
 output "SecretAccessKey" {
-  value = aws_iam_access_key.lampions_iam_route_user_access_key.secret
+  value     = aws_iam_access_key.lampions_iam_route_user_access_key.secret
   sensitive = true
 }
 

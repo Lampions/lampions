@@ -31,5 +31,5 @@ resource "aws_iam_user_policy" "lampions_iam_route_user_policy" {
 
 # Access key.
 resource "aws_iam_access_key" "lampions_iam_route_user_access_key" {
-  user   = aws_iam_user.lampions_iam_route_user.name
+  user = aws_iam_user.lampions_iam_route_user.name
 }
