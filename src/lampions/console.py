@@ -386,7 +386,6 @@ def put_objects_zip(file_paths, zip_filename, region, bucket):
 
     s3 = boto3.client("s3", region_name=region)
     s3.upload_fileobj(byte_stream, Bucket=bucket, Key=zip_filename)
-    return zip_filename
 
 
 @lampions.requires_config
@@ -405,9 +404,8 @@ def create_receipt_rule(config, _):
         directory / filename
         for filename in [f"{lambda_function_basename}.py", "utils.py"]
     ]
-    lambda_function_filename = put_objects_zip(
-        lambda_files, f"{lambda_function_basename}.zip", region, bucket
-    )
+    lambda_function_filename = f"{lambda_function_basename}.zip"
+    put_objects_zip(lambda_files, lambda_function_filename, region, bucket)
 
     # Create the Lambda function.
     name_prefix = create_lampions_name_prefix(domain)
