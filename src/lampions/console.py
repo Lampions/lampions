@@ -2,6 +2,7 @@ import email.utils
 import functools
 import io
 import json
+import time
 import zipfile
 from argparse import ArgumentParser
 from pathlib import Path
@@ -427,6 +428,7 @@ def create_receipt_rule(config, _):
             Timeout=30,
         )
     except lambda_.exceptions.ResourceConflictException:
+        print("Lambda function exists. Updating function configuration")
         lambda_function = lambda_.update_function_configuration(
             FunctionName=function_name,
             Role=role_arn,
@@ -439,6 +441,9 @@ def create_receipt_rule(config, _):
             },
             Timeout=30,
         )
+        delay = 2
+        print(f"Updating function code after a {delay} second delay")
+        time.sleep(delay)
         lambda_function = lambda_.update_function_code(
             FunctionName=function_name,
             S3Bucket=bucket,
