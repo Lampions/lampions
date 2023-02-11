@@ -1,6 +1,9 @@
 import email
+import email.utils
 import json
 import os
+import typing
+from dataclasses import dataclass
 
 import boto3
 
@@ -18,7 +21,13 @@ def retrieve_message(message_id):
     return message["Body"].read()
 
 
-def determine_forward_address(recipients):
+@dataclass
+class ForwardAddress:
+    alias: str
+    email: str
+
+
+def determine_forward_address(recipients) -> typing.Optional[ForwardAddress]:
     region = os.environ["LAMPIONS_REGION"]
     domain = os.environ["LAMPIONS_DOMAIN"]
     bucket = f"lampions.{domain}"
@@ -44,23 +53,30 @@ def determine_forward_address(recipients):
             recipient = f"{alias}@{domain}"
             if address == recipient:
                 if not route["active"]:
-                    print(f"Not forwarding email to '{recipient}' "
-                          "(route inactive)")
+                    print(
+                        f"Not forwarding email to '{recipient}' "
+                        "(route inactive)"
+                    )
                 else:
                     if name and name != address:
                         forward_address = email.utils.formataddr(
-                            (name, route["forward"]))
+                            (name, route["forward"])
+                        )
                     else:
                         forward_address = route["forward"]
-                    forward_addresses.append((alias, forward_address))
+                    forward_addresses.append(
+                        ForwardAddress(alias, forward_address)
+                    )
                     break
 
-    if not forward_addresses:
+    if len(forward_addresses) == 0:
         raise SystemExit(f"No valid alias found for '{recipients}'")
     forward_address, *_ = forward_addresses
     if len(forward_addresses) > 1:
-        print("Multiple forward addresses found! Only forwarding to "
-              f"'{forward_address}'.")
+        print(
+            "Multiple forward addresses found! Only forwarding to "
+            f"'{forward_address}'."
+        )
     return forward_address
 
 
@@ -95,10 +111,10 @@ def set_recipient_relations(recipients):
     bucket = f"lampions.{domain}"
 
     recipients_string = utils.dict_to_formatted_json(
-        {"recipients": recipients})
+        {"recipients": recipients}
+    )
     s3 = boto3.client("s3", region_name=region)
-    s3.put_object(Bucket=bucket, Key="recipients.json",
-                  Body=recipients_string)
+    s3.put_object(Bucket=bucket, Key="recipients.json", Body=recipients_string)
 
 
 def get_recipient_by_hash(alias, address_hash):
@@ -126,8 +142,8 @@ def determine_reply_recipient(recipients):
     if len(recipients) > 1:
         return None
     domain = os.environ["LAMPIONS_DOMAIN"]
-    recipient, = recipients
-    name, address = email.utils.parseaddr(recipient)
+    recipient = utils.first(recipients)
+    _, address = email.utils.parseaddr(recipient)
     if "+" in address and address.endswith(domain):
         return recipient
     return None
@@ -158,7 +174,7 @@ def send_message(message_id):
         # When sending reply emails, these two headers leak the original sender
         # address.
         "Received-SPF",
-        "Authentication-Results"
+        "Authentication-Results",
     ]
     for header in unwanted_headers:
         del mail[header]
@@ -186,20 +202,24 @@ def send_message(message_id):
             name = f"{origin_name} (via) {origin_address}"
         else:
             name = origin_address
-        alias, forward_address = determine_forward_address(recipients)
+        forward_address = determine_forward_address(recipients)
+        if forward_address is None:
+            print(
+                f"Could not find forward address for recipients '{recipients}'"
+            )
+            return
         sender_address = add_recipient_relation(
-            alias, origin_address, reply_to)
+            forward_address.alias, origin_address, reply_to
+        )
         sender = email.utils.formataddr((name, sender_address))
         mail.replace_header("From", sender)
-        destinations = [forward_address]
+        destinations = [forward_address.email]
 
     region = os.environ["LAMPIONS_REGION"]
     kwargs = {
         "Source": sender,
         "Destinations": destinations,
-        "RawMessage": {
-            "Data": mail.as_string()
-        }
+        "RawMessage": {"Data": mail.as_string()},
     }
     ses = boto3.client("ses", region_name=region)
     try:
@@ -208,6 +228,6 @@ def send_message(message_id):
         print(exception)
 
 
-def handler(event, context):
+def handler(event, _):
     message_id = event["Records"][0]["ses"]["mail"]["messageId"]
     send_message(message_id)
