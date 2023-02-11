@@ -406,7 +406,7 @@ def create_receipt_rule(config, _):
         for filename in [f"{lambda_function_basename}.py", "utils.py"]
     ]
     lambda_function_filename = put_objects_zip(
-        lambda_files, "{lambda_function_basename}.zip", region, bucket
+        lambda_files, f"{lambda_function_basename}.zip", region, bucket
     )
 
     # Create the Lambda function.
