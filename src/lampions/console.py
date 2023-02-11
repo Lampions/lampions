@@ -402,7 +402,7 @@ def create_receipt_rule(config, _):
     directory = Path(__file__).resolve().parent
     lambda_function_basename = "lambda"
     lambda_files = [
-        directory / "src" / filename
+        directory / filename
         for filename in [f"{lambda_function_basename}.py", "utils.py"]
     ]
     lambda_function_filename = put_objects_zip(
