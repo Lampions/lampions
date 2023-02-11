@@ -479,7 +479,7 @@ def create_receipt_rule(config, _):
         pass
     ses.set_active_receipt_rule_set(RuleSetName=rule_set_name)
 
-    print("Receipt rule created")
+    print("Receipt rule created/updated")
 
 
 @lampions.requires_config
