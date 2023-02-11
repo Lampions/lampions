@@ -48,35 +48,35 @@ def determine_forward_address(recipients) -> typing.Optional[ForwardAddress]:
     forward_addresses = []
     for recipient in recipients:
         name, address = email.utils.parseaddr(recipient)
+        address = address.lower()
         for route in routes:
             alias = route["alias"]
-            recipient = f"{alias}@{domain}"
-            if address == recipient:
-                if not route["active"]:
-                    print(
-                        f"Not forwarding email to '{recipient}' "
-                        "(route inactive)"
-                    )
-                else:
-                    if name and name != address:
-                        forward_address = email.utils.formataddr(
-                            (name, route["forward"])
-                        )
-                    else:
-                        forward_address = route["forward"]
-                    forward_addresses.append(
-                        ForwardAddress(alias, forward_address)
-                    )
-                    break
+            alias_address = f"{alias}@{domain}".lower()
+            if address != alias_address:
+                continue
+            if not route["active"]:
+                print(
+                    f"Not forwarding email to '{alias_address}' "
+                    f"(route '{alias}' inactive)"
+                )
+                continue
+            if name and name != address:
+                forward_address = email.utils.formataddr(
+                    (name, route["forward"])
+                )
+            else:
+                forward_address = route["forward"]
+            forward_addresses.append(ForwardAddress(alias, forward_address))
+            break
 
     if len(forward_addresses) == 0:
         raise SystemExit(f"No valid alias found for '{recipients}'")
-    forward_address, *_ = forward_addresses
-    if len(forward_addresses) > 1:
+    elif len(forward_addresses) > 1:
         print(
             "Multiple forward addresses found! Only forwarding to "
-            f"'{forward_address}'."
+            f"first of '{forward_addresses}'."
         )
+    forward_address = utils.first(forward_addresses)
     return forward_address
 
 
@@ -117,15 +117,12 @@ def set_recipient_relations(recipients):
     s3.put_object(Bucket=bucket, Key="recipients.json", Body=recipients_string)
 
 
-def get_recipient_by_hash(alias, address_hash):
+def get_recipient_by_hash(alias: str, address_hash) -> typing.Optional[str]:
     recipients = get_recipient_relations()
-    recipients_for_alias = recipients.get(alias)
-    if recipients_for_alias is not None:
-        return recipients_for_alias.get(address_hash)
-    return None
+    return recipients.get(alias, {}).get(address_hash)
 
 
-def add_recipient_relation(alias, address, reply_to):
+def add_recipient_relation(alias: str, address, reply_to):
     address_hash = utils.compute_sha224_hash(address)
     recipients = get_recipient_relations()
     recipients_for_alias = recipients.get(alias)
@@ -141,9 +138,9 @@ def add_recipient_relation(alias, address, reply_to):
 def determine_reply_recipient(recipients):
     if len(recipients) > 1:
         return None
-    domain = os.environ["LAMPIONS_DOMAIN"]
     recipient = utils.first(recipients)
     _, address = email.utils.parseaddr(recipient)
+    domain = os.environ["LAMPIONS_DOMAIN"]
     if "+" in address and address.endswith(domain):
         return recipient
     return None
@@ -188,13 +185,18 @@ def send_message(message_id):
     reply_recipient = determine_reply_recipient(recipients)
     if origin_address in verified_addresses and reply_recipient is not None:
         _, address = email.utils.parseaddr(reply_recipient)
-        alias, address_hash = address.split("@")[0].split("+")
+        alias, address_hash = map(str.lower, address.split("@")[0].split("+"))
 
         domain = os.environ["LAMPIONS_DOMAIN"]
         sender = email.utils.formataddr((origin_name, f"{alias}@{domain}"))
         mail.replace_header("From", sender)
 
         recipient = get_recipient_by_hash(alias, address_hash)
+        if recipient is None:
+            raise SystemExit(
+                f"Could not determine email recipient for alias '{alias}' "
+                f"from hash '{address_hash}'"
+            )
         mail.replace_header("To", recipient)
         destinations = [recipient]
     else:
@@ -225,7 +227,7 @@ def send_message(message_id):
     try:
         ses.send_raw_email(**kwargs)
     except ses.exceptions.ClientError as exception:
-        print(exception)
+        print(f"Failed to send email: {exception}")
 
 
 def handler(event, _):
