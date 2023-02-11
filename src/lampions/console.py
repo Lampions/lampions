@@ -427,6 +427,18 @@ def create_receipt_rule(config, _):
             Timeout=30,
         )
     except lambda_.exceptions.ResourceConflictException:
+        lambda_function = lambda_.update_function_configuration(
+            FunctionName=function_name,
+            Role=role_arn,
+            Handler=f"{lambda_function_basename}.handler",
+            Environment={
+                "Variables": {
+                    "LAMPIONS_DOMAIN": domain,
+                    "LAMPIONS_REGION": region,
+                }
+            },
+            Timeout=30,
+        )
         lambda_function = lambda_.update_function_code(
             FunctionName=function_name,
             S3Bucket=bucket,
