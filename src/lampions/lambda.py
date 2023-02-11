@@ -7,7 +7,11 @@ from dataclasses import dataclass
 
 import boto3
 
-from . import utils
+# HACK(nkoep): This is necessary for the lambda function to import utils.
+try:
+    from . import utils
+except ImportError:
+    import utils
 
 
 def retrieve_message(message_id):
