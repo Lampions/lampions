@@ -1,5 +1,11 @@
 # Lampions
 
+| Overview       |                                                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coverage       | [![Coverage Status](https://coveralls.io/repos/github/lampions/lampions/badge.svg?branch=master)](https://coveralls.io/github/lampions/lampions?branch=master)          |
+| Build status   | [![Build status](https://github.com/lampions/lampions/actions/workflows/run_tests.yml/badge.svg)](https://github.com/lampions/lampions/actions/workflows/run_tests.yml) |
+| Code quality   | [![CodeQL](https://github.com/lampions/lampions/actions/workflows/codeql.yml/badge.svg)](https://github.com/lampions/lampions/actions/workflows/codeql.yml)             |
+
 Lampions is a project to configure email aliases and handle email
 relaying/forwarding leveraging the AWS infrastructure.
 The goal is to insulate a user's primary email address(es) from services they
@@ -47,11 +53,13 @@ Lampions.
    rather limited, this limitation does not pose any significant issues.
    For convenience, the `lampions` command-line utility provides the
    `verify-email-addresses` subcommand to initiate the verification process.
+   Note, however, that without moving an account out of the sandbox
+   bidirectional communication is not possible.
 1. Addresses in `From` and `Return-Path` headers must be verified in SES.
    This means that we cannot preserve the original `From` header of incoming
    emails.
    In order to facilitate bidirectional communication, we always forward emails
-   using addresses of the form `<alias>+<hash>@<domain>` where `<hash>` is the
+   using addresses of the form `{alias}+{hash}@{domain}` where `{hash}` is the
    SHA224 hash of the original sender (or `Reply-To` if it is present).
    To reflect the original sender in the forwarded email, we update the headers
    such that
@@ -63,13 +71,13 @@ Lampions.
    becomes
 
    ```raw
-   From: Art Vandelay (via) art@vandelay-industries.com <alias>+<hash>@<domain>
+   From: Art Vandelay (via) art@vandelay-industries.com <{alias}+{hash}@{domain}>
    ```
 
    When replying to a forwarded email from a verified SES address, the hash is
    used to resolve the information about the original sender of the forwarded
    email.
-   The reply is then relayed via the original route address `<alias>@<domain>`.
+   The reply is then relayed via the original route address `{alias}@{domain}`.
 
 ## Setup
 
@@ -83,7 +91,7 @@ Alternatively, since `lampions` uses the `boto3` python package to interface
 with the AWS API, the usual environment variable overrides `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, etc. can be used instead.
 
-To get started, first run `lampions init --region <region> --domain <domain>`
+To get started, first run `lampions init --region {region} --domain {domain}`
 to initialize the Lampions config with the region in which all AWS resources
 will be created.
 
@@ -98,9 +106,9 @@ Alternatively, one may perform the individual steps manually:
    The user credentials, which are also needed to define routes via the
    [browser extension], will be stored in the config file.
    To view the config and retrieve the user credentials, run `lampions
-   show-config`.
+show-config`.
 1. In order to configure a domain for sending and receiving, use `lampions
-   configure verify-domain` to add a domain to SES.
+configure verify-domain` to add a domain to SES.
    When a domain is successfully added, the subcommand writes a set of DKIM
    tokens to the config file.
    These tokens then need to be used to add a set of CNAME records to the DNS
@@ -119,8 +127,8 @@ identity list, and send a verification mail to the address.
 
 In order to manipulate routes, the following commands are provided:
 
-* To list defined routes, use `lampions list-routes`.
-* To add, update or remove a route, use `lampions {add,update,remove}-route`.
+- To list defined routes, use `lampions list-routes`.
+- To add, update or remove a route, use `lampions {add,update,remove}-route`.
 
 Refer to the help pages of the respective commands for more information.
 

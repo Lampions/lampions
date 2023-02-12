@@ -15,7 +15,9 @@ line-length = 79
 
 [tool.ruff]
 line-length = 79
+fixable = []
 select = ["B", "E", "F", "I", "W"]
+src = ["src"]
 
 [tool.ruff.pydocstyle]
 convention = "google"

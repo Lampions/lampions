@@ -2,16 +2,29 @@ import email
 import email.utils
 import json
 import os
+import pprint
 import typing
 from dataclasses import dataclass
 
 import boto3
 
-# HACK(nkoep): This is necessary for the lambda function to import utils.
+# HACK(nkoep): Temporary hacks while we are deploying the lambda function as
+#              zip archive.
 try:
-    from . import utils
+    from loguru import logger
+except ImportError:
+    import logging as logger
+
+try:
+    from lampions import utils
 except ImportError:
     import utils
+
+
+def handler(event, _):
+    logger.info(f"Trigger event: {pprint.pformat(event)}")
+    message_id = event["Records"][0]["ses"]["mail"]["messageId"]
+    send_message(message_id)
 
 
 def retrieve_message(message_id):
@@ -59,7 +72,7 @@ def determine_forward_address(recipients) -> typing.Optional[ForwardAddress]:
             if address != alias_address:
                 continue
             if not route["active"]:
-                print(
+                logger.info(
                     f"Not forwarding email to '{alias_address}' "
                     f"(route '{alias}' inactive)"
                 )
@@ -74,9 +87,9 @@ def determine_forward_address(recipients) -> typing.Optional[ForwardAddress]:
             break
 
     if len(forward_addresses) == 0:
-        raise SystemExit(f"No valid alias found for '{recipients}'")
+        raise_runtime_error(f"No valid alias found for '{recipients}'")
     elif len(forward_addresses) > 1:
-        print(
+        logger.warning(
             "Multiple forward addresses found! Only forwarding to "
             f"first of '{forward_addresses}'."
         )
@@ -197,7 +210,7 @@ def send_message(message_id):
 
         recipient = get_recipient_by_hash(alias, address_hash)
         if recipient is None:
-            raise SystemExit(
+            raise_runtime_error(
                 f"Could not determine email recipient for alias '{alias}' "
                 f"from hash '{address_hash}'"
             )
@@ -210,10 +223,9 @@ def send_message(message_id):
             name = origin_address
         forward_address = determine_forward_address(recipients)
         if forward_address is None:
-            print(
+            raise_runtime_error(
                 f"Could not find forward address for recipients '{recipients}'"
             )
-            return
         sender_address = add_recipient_relation(
             forward_address.alias, origin_address, reply_to
         )
@@ -231,9 +243,9 @@ def send_message(message_id):
     try:
         ses.send_raw_email(**kwargs)
     except ses.exceptions.ClientError as exception:
-        print(f"Failed to send email: {exception}")
+        logger.exception(f"Failed to send email: {exception}")
 
 
-def handler(event, _):
-    message_id = event["Records"][0]["ses"]["mail"]["messageId"]
-    send_message(message_id)
+def raise_runtime_error(message: str):
+    logger.error(message)
+    raise RuntimeError(message)
