@@ -10,6 +10,9 @@ repos:
       - id: mixed-line-ending
         args:
           - --fix=lf
+      - id: no-commit-to-branch
+        args:
+          - --branch=master
       - id: trailing-whitespace
   - repo: https://github.com/pycqa/isort
     rev: 5.11.5
