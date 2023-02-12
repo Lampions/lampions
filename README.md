@@ -1,5 +1,11 @@
 # Lampions
 
+| Overview       |                                                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coverage       | [![Coverage Status](https://coveralls.io/repos/github/lampions/lampions/badge.svg?branch=master)](https://coveralls.io/github/lampions/lampions?branch=master)          |
+| Build status   | [![Build status](https://github.com/lampions/lampions/actions/workflows/run_tests.yml/badge.svg)](https://github.com/lampions/lampions/actions/workflows/run_tests.yml) |
+| Code quality   | [![CodeQL](https://github.com/lampions/lampions/actions/workflows/codeql.yml/badge.svg)](https://github.com/lampions/lampions/actions/workflows/codeql.yml)             |
+
 Lampions is a project to configure email aliases and handle email
 relaying/forwarding leveraging the AWS infrastructure.
 The goal is to insulate a user's primary email address(es) from services they
