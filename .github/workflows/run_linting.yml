@@ -22,6 +22,5 @@ jobs:
 
       - name: Run linting
         run: |
-          isort --check .
           black --check .
           ruff check .
