@@ -400,7 +400,7 @@ def create_receipt_rule(config, _):
 
     # Upload the code of the Lambda function to the Lampions bucket.
     directory = Path(__file__).resolve().parent
-    lambda_function_basename = "lambda"
+    lambda_function_basename = "lambda_function"
     lambda_files = [
         directory / filename
         for filename in [f"{lambda_function_basename}.py", "utils.py"]

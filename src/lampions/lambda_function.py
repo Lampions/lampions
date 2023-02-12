@@ -9,7 +9,7 @@ import boto3
 
 # HACK(nkoep): This is necessary for the lambda function to import utils.
 try:
-    from . import utils
+    from lampions import utils
 except ImportError:
     import utils
 
