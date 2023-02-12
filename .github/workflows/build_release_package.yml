@@ -19,7 +19,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v2
       - name: Install dependencies
-        run: pip install -e ".[all]"
+        run: pip install -e ".[ci]"
       - name: Build release artifacts
         run: python -m build
       - name: Verify tag name
