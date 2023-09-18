@@ -25,6 +25,7 @@ data "aws_iam_policy_document" "lampions_iam_route_user_policy_document" {
 
 # Route user policy.
 resource "aws_iam_user_policy" "lampions_iam_route_user_policy" {
+  name = "${local.lampions_prefix}RoutesAndRecipientsFilePolicy"
   user   = aws_iam_user.lampions_iam_route_user.name
   policy = data.aws_iam_policy_document.lampions_iam_route_user_policy_document.json
 }

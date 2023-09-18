@@ -6,7 +6,8 @@ data "aws_iam_policy_document" "lampions_lambda_role_policy_document" {
     actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
-    "logs:PutLogEvents"]
+      "logs:PutLogEvents"
+    ]
     resources = ["*"]
   }
   statement {

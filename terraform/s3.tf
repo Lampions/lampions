@@ -1,9 +1,13 @@
-# S3 bucket for incoming emails and route aliases.
+# Bucket for incoming emails and route aliases.
 resource "aws_s3_bucket" "lampions_s3_bucket" {
   bucket = "lampions.${var.domain}"
+}
 
-  versioning {
-    enabled = true
+# Bucket versioning.
+resource "aws_s3_bucket_versioning" "lampions_s3_bucket_versioning" {
+  bucket = aws_s3_bucket.lampions_s3_bucket.id
+  versioning_configuration {
+    status = "Enabled"
   }
 }
 
