@@ -1,6 +1,3 @@
-# Created by https://www.toptal.com/developers/gitignore/api/python,terraform
-# Edit at https://www.toptal.com/developers/gitignore?templates=python,terraform
-
 ### Python ###
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -176,7 +173,10 @@ override.tf.json
 .terraformrc
 terraform.rc
 
-# End of https://www.toptal.com/developers/gitignore/api/python,terraform
-
+# pyenv
 .python-version
+
+# setuptools-scm
+src/lampions/_version.py
+
 *.zip

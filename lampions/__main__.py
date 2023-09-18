@@ -1,4 +1,0 @@
-import lampions
-
-
-lampions.main()

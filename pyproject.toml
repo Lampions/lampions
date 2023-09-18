@@ -1,0 +1,23 @@
+[build-system]
+requires = ["pip>=23.0", "setuptools>=64.0", "setuptools-scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "src/lampions/_version.py"
+
+[tool.isort]
+profile = "black"
+line_length = 79
+
+[tool.black]
+include = '\.py$'
+line-length = 79
+
+[tool.ruff]
+line-length = 79
+fixable = []
+select = ["B", "E", "F", "I", "W"]
+src = ["src"]
+
+[tool.ruff.pydocstyle]
+convention = "google"

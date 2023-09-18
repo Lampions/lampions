@@ -1,28 +1,36 @@
 # Lampions
 
+| Overview       |                                                                                                                                                                         |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Coverage       | [![Coverage Status](https://coveralls.io/repos/github/lampions/lampions/badge.svg?branch=master)](https://coveralls.io/github/lampions/lampions?branch=master)          |
+| Build status   | [![Build status](https://github.com/lampions/lampions/actions/workflows/run_tests.yml/badge.svg)](https://github.com/lampions/lampions/actions/workflows/run_tests.yml) |
+| Code quality   | [![CodeQL](https://github.com/lampions/lampions/actions/workflows/codeql.yml/badge.svg)](https://github.com/lampions/lampions/actions/workflows/codeql.yml)             |
+
 Lampions is a project to configure email aliases and handle email
 relaying/forwarding leveraging the AWS infrastructure.
 The goal is to insulate a user's primary email address(es) from services they
 have signed up for by creating dedicated aliases and associated routes used to
 forward emails to personal inboxes.
-The advantage is that instead of having to manually opt-out of marketing
-emails, Lampions lets users deactivate a route and silently drop such emails.
-Moreover, if an alias suddenly starts receiving spam, it is easy to pinpoint
-the service which leaked the address in the first place.
+This setup lets users (temporarily) deactivate route forwarding at will to
+silently drop undesired communication from websites such as marketing emails
+without bouncing.
+Additionally, if an alias suddenly starts receiving spam, it is easy to
+pinpoint the service which leaked the address in the first place.
 
-The core functionality of Lampions is built on top of AWS Simple Email Service
-(SES), S3 and AWS Lambda.
+Lampions is built on top of AWS Simple Email Service (SES), S3 and AWS Lambda.
 The service is complemented by a [browser extension] to quickly define new
 email aliases, change forward addresses or enable/disable individual email
 routes.
-This repository describes the underlying architecture, and provides a
-command-line utility to define and configure the necessary AWS infrastructure.
+This repository describes the underlying architecture, provides a
+command-line utility to define and configure the necessary AWS infrastructure,
+and hosts the source code of the Lambda function that gets deployed to AWS.
 
 ## Architecture Overview
 
 The general architecture of Lampions is based on the [AWS email forwarding
 guide].
 The event sequence when an incoming email arrives on a domain is as follows:
+
 1. All arriving emails on a domain are first accepted by SES and simply written
    to an S3 bucket.
 1. A Lambda function is triggered to process the email.
@@ -38,31 +46,38 @@ The event sequence when an incoming email arrives on a domain is as follows:
 
 Due to limitations in SES, there are a few caveats to keep in mind when using
 Lampions.
+
 1. Without moving the associated AWS account out of the [SES sandbox], it is
    only possible to forward emails to verified addresses.
    Since the set of forward addresses in the general use case is expected to be
    rather limited, this limitation does not pose any significant issues.
    For convenience, the `lampions` command-line utility provides the
    `verify-email-addresses` subcommand to initiate the verification process.
+   Note, however, that without moving an account out of the sandbox
+   bidirectional communication is not possible.
 1. Addresses in `From` and `Return-Path` headers must be verified in SES.
    This means that we cannot preserve the original `From` header of incoming
    emails.
    In order to facilitate bidirectional communication, we always forward emails
-   using addresses of the form `<alias>+<hash>@<domain>` where `<hash>` is the
+   using addresses of the form `{alias}+{hash}@{domain}` where `{hash}` is the
    SHA224 hash of the original sender (or `Reply-To` if it is present).
    To reflect the original sender in the forwarded email, we update the headers
    such that
+
    ```raw
    From: Art Vandelay <art@vandelay-industries.com>
    ```
+
    becomes
+
    ```raw
-   From: Art Vandelay (via) art@vandelay-industries.com <alias>+<hash>@<domain>
+   From: Art Vandelay (via) art@vandelay-industries.com <{alias}+{hash}@{domain}>
    ```
-   When replying to such a forwarded email from a verified SES address, the
-   hash is used to resolve the information about the original sender of the
-   forwarded email.
-   The reply is then relayed via the original route address `<alias>@<domain>`.
+
+   When replying to a forwarded email from a verified SES address, the hash is
+   used to resolve the information about the original sender of the forwarded
+   email.
+   The reply is then relayed via the original route address `{alias}@{domain}`.
 
 ## Setup
 
@@ -76,13 +91,14 @@ Alternatively, since `lampions` uses the `boto3` python package to interface
 with the AWS API, the usual environment variable overrides `AWS_ACCESS_KEY_ID`,
 `AWS_SECRET_ACCESS_KEY`, etc. can be used instead.
 
-To get started, first run `lampions init --region <region> --domain <domain>`
+To get started, first run `lampions init --region {region} --domain {domain}`
 to initialize the Lampions config with the region in which all AWS resources
 will be created.
 
 After that, the `lampions configure` command can be used to perform all
 necessary configuration steps in sequence.
 Alternatively, one may perform the individual steps manually:
+
 1. Call `lampions configure create-bucket` to create an S3 bucket in which the
    routes table and incoming emails will be stored.
 1. Use `lampions configure create-route-user` to create a new user in IAM with
@@ -90,9 +106,9 @@ Alternatively, one may perform the individual steps manually:
    The user credentials, which are also needed to define routes via the
    [browser extension], will be stored in the config file.
    To view the config and retrieve the user credentials, run `lampions
-   show-config`.
+show-config`.
 1. In order to configure a domain for sending and receiving, use `lampions
-   configure verify-domain` to add a domain to SES.
+configure verify-domain` to add a domain to SES.
    When a domain is successfully added, the subcommand writes a set of DKIM
    tokens to the config file.
    These tokens then need to be used to add a set of CNAME records to the DNS
@@ -110,8 +126,9 @@ To that end, use `lampions add-forward-address` to add an address to the SES
 identity list, and send a verification mail to the address.
 
 In order to manipulate routes, the following commands are provided:
-* To list defined routes, use `lampions list-routes`.
-* To add, update or remove a route, use `lampions {add,update,remove}-route`.
+
+- To list defined routes, use `lampions list-routes`.
+- To add, update or remove a route, use `lampions {add,update,remove}-route`.
 
 Refer to the help pages of the respective commands for more information.
 
