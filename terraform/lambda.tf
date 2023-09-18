@@ -63,3 +63,44 @@ resource "aws_iam_role" "lampions_lambda_role" {
     policy = data.aws_iam_policy_document.lampions_lambda_role_policy_document.json
   }
 }
+
+data "template_file" "lambda" {
+  template = file("${path.module}/../lampions/lambda.py")
+}
+
+data "template_file" "utils" {
+  template = file("${path.module}/../lampions/utils.py")
+}
+
+# Lambda function code.
+data "archive_file" "lampions_lambda_function_code" {
+  type        = "zip"
+  output_path = "lambda_function.zip"
+
+  source {
+    content  = data.template_file.lambda.rendered
+    filename = "lambda.py"
+  }
+
+  source {
+    content  = data.template_file.utils.rendered
+    filename = "utils.py"
+  }
+}
+
+# Lambda function.
+resource "aws_lambda_function" "lampions_lambda_function" {
+  function_name    = "${local.lampions_prefix}LambdaFunction"
+  filename         = "lambda_function.zip"
+  source_code_hash = data.archive_file.lampions_lambda_function_code.output_base64sha256
+  role             = aws_iam_role.lampions_lambda_role.arn
+  runtime          = "python3.11"
+  handler          = "lambda.handler"
+
+  environment {
+    variables = {
+      LAMPIONS_DOMAIN = "${var.domain}"
+      LAMPIONS_REGION = "${var.region}"
+    }
+  }
+}
