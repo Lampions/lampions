@@ -173,7 +173,6 @@ def create_routes_and_recipients_file_policy(domain, bucket):
     """
     name_prefix = create_lampions_name_prefix(domain)
     policy_name = f"{name_prefix}RoutesAndRecipientsFilePolicy"
-    name_prefix = create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
@@ -284,7 +283,6 @@ def create_lambda_function_role(region, domain, bucket):
     account_id = get_account_id()
     name_prefix = create_lampions_name_prefix(domain)
     policy_name = f"{name_prefix}LambdaRolePolicy"
-    name_prefix = create_lampions_name_prefix(domain)
     policy = {
         "Version": "2012-10-17",
         "Statement": [
