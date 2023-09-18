@@ -2,6 +2,36 @@
 requires = ["pip>=23.0", "setuptools>=64.0", "setuptools-scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "lampions"
+dynamic = ["version"]
+description = """\
+  Command-line utility to configure Lampions and manage email aliases\
+"""
+authors = [
+  {name = "Niklas Koep", email="lampions@nkoep.net"}
+]
+readme = "README.md"
+license = {text = "BSD 3-Clause License"}
+requires-python = ">=3.7"
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "License :: OSI Approved :: BSD License",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.7"
+]
+dependencies = [
+  "boto3==1.12",
+  "loguru",
+  "validate_email"
+]
+[project.urls]
+homepage = "https://github.com/lampions/lampions"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests*"]
+
 [tool.setuptools_scm]
 write_to = "src/lampions/_version.py"
 
