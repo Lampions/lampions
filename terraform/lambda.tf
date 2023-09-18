@@ -65,11 +65,11 @@ resource "aws_iam_role" "lampions_lambda_role" {
 }
 
 data "template_file" "lambda" {
-  template = file("${path.module}/../lampions/lambda.py")
+  template = file("${path.module}/../src/lampions/lambda.py")
 }
 
 data "template_file" "utils" {
-  template = file("${path.module}/../lampions/utils.py")
+  template = file("${path.module}/../src/lampions/utils.py")
 }
 
 # Lambda function code.
