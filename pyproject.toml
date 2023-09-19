@@ -23,10 +23,20 @@ classifiers = [
 dependencies = [
   "boto3==1.12",
   "loguru",
+  "tftest",
   "validate_email"
 ]
+
 [project.urls]
-homepage = "https://github.com/lampions/lampions"
+homepage = "https://github.com/lampions"
+
+[project.optional-dependencies]
+dev = [
+  "pytest"
+]
+all = [
+  "lampions[dev]"
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -48,6 +58,9 @@ line-length = 79
 fixable = []
 select = ["A", "B", "E", "F", "FBT", "I", "PT", "RUF", "S", "W"]
 src = ["src"]
+
+[tool.ruff.extend-per-file-ignores]
+"tests/**/*.py" = ["S101"]
 
 [tool.ruff.pydocstyle]
 convention = "google"
