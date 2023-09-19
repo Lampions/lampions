@@ -2,13 +2,13 @@ import email.utils
 import functools
 import io
 import json
-import time
-import zipfile
+import pathlib
 from argparse import ArgumentParser
 from pathlib import Path
 from pydoc import pager
 
 import boto3
+import tftest
 from validate_email import validate_email
 
 from . import utils
@@ -19,8 +19,7 @@ CONFIG_PATH = Path("~/.config/lampions/config.json").expanduser()
 REGIONS = ("eu-west-1", "us-east-1", "us-west-2")
 
 
-def quit_with_message(*args, use_pager=False):
-    text = "\n".join(args)
+def quit_with_message(text: str, *, use_pager: bool = False):
     if use_pager:
         pager(text)
     else:
@@ -99,174 +98,30 @@ class Lampions:
 lampions = Lampions()
 
 
-def get_account_id():
-    sts = boto3.client("sts")
-    return sts.get_caller_identity()["Account"]
-
-
-def create_lampions_name_prefix(domain):
-    return "Lampions" + "".join(map(str.capitalize, domain.split(".")))
-
-
 @lampions.requires_config
-def create_s3_bucket(config, _):
-    region = config["Region"]
-    domain = config["Domain"]
-    bucket = f"lampions.{domain}"
-
-    s3 = boto3.client("s3", region_name=region)
-    try:
-        s3.create_bucket(
-            Bucket=bucket,
-            CreateBucketConfiguration={"LocationConstraint": region},
-        )
-    except (
-        s3.exceptions.BucketAlreadyExists,
-        s3.exceptions.BucketAlreadyOwnedByYou,
-    ):
-        pass
-    except Exception as exception:
-        die_with_message(
-            f"Failed to create bucket '{bucket}':", str(exception)
-        )
-
-    s3.put_bucket_versioning(
-        Bucket=bucket, VersioningConfiguration={"Status": "Enabled"}
+def configure_lampions(config: Config, _):
+    terraform_dir = str(
+        pathlib.Path(__file__).resolve().parent.parent.parent / "terraform"
     )
-
-    name_prefix = create_lampions_name_prefix(domain)
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": f"{name_prefix}SesS3Put",
-                "Effect": "Allow",
-                "Principal": {"Service": "ses.amazonaws.com"},
-                "Action": "s3:PutObject",
-                "Resource": f"arn:aws:s3:::{bucket}/inbox/*",
-                "Condition": {
-                    "StringEquals": {"aws:Referer": get_account_id()}
-                },
-            }
-        ],
-    }
-    policy_document = json.dumps(policy)
-    try:
-        s3.put_bucket_policy(Bucket=bucket, Policy=policy_document)
-    except Exception as exception:
-        die_with_message(
-            f"Failed to attach policy to bucket '{bucket}':", str(exception)
-        )
-    print(f"Created S3 bucket '{bucket}")
-
-
-def create_routes_and_recipients_file_policy(domain, bucket):
-    """Create policy for the routes file.
-
-    Create a policy that allows reading and writing to the ``routes.json`` and
-    ``recipients.json`` files inside the S3 bucket ``bucket``.
-
-    Returns:
-    --------
-    arn : str
-        The arn of the policy.
-    """
-    name_prefix = create_lampions_name_prefix(domain)
-    policy_name = f"{name_prefix}RoutesAndRecipientsFilePolicy"
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": f"{name_prefix}S3ListBucket",
-                "Effect": "Allow",
-                "Action": "s3:ListBucket",
-                "Resource": f"arn:aws:s3:::{bucket}",
-            },
-            {
-                "Sid": f"{name_prefix}S3GetPutRoutes",
-                "Effect": "Allow",
-                "Action": ["s3:GetObject", "s3:PutObject"],
-                "Resource": [
-                    f"arn:aws:s3:::{bucket}/routes.json",
-                    f"arn:aws:s3:::{bucket}/recipients.json",
-                ],
-            },
-        ],
-    }
-    policy_document = json.dumps(policy)
-    iam = boto3.client("iam")
-    try:
-        policy = iam.create_policy(
-            PolicyName=policy_name, PolicyDocument=policy_document
-        )
-    except iam.exceptions.EntityAlreadyExistsException:
-        account_id = get_account_id()
-        arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
-    except Exception as exception:
-        die_with_message(
-            "Failed to create routes and recipient file policy:",
-            str(exception),
-        )
-    else:
-        arn = policy["Policy"]["Arn"]
-    return arn
-
-
-@lampions.requires_config
-def create_route_user(config, _):
-    if config.get("AccessKeyId") and config.get("SecretAccessKey"):
-        print("Route user and access key already exist")
-        return
-
     domain = config["Domain"]
-    bucket = f"lampions.{domain}"
+    region = config["Region"]
 
-    policy_arn = create_routes_and_recipients_file_policy(domain, bucket)
-    name_prefix = create_lampions_name_prefix(domain)
-    user_name = f"{name_prefix}RouteUser"
-    iam = boto3.client("iam")
-    try:
-        iam.create_user(UserName=user_name)
-    except iam.exceptions.EntityAlreadyExistsException:
-        pass
-    except Exception as exception:
-        die_with_message(
-            f"Failed to create route user '{user_name}':", str(exception)
-        )
+    tf = tftest.TerraformTest(".", terraform_dir)
+    tf.init()
+    variables = {"domain": domain, "region": region}
+    tf.plan(tf_vars=variables)
+    tf.apply(tf_vars=variables)
+    output = tf.output()
 
-    iam.attach_user_policy(UserName=user_name, PolicyArn=policy_arn)
-
-    try:
-        access_key = iam.create_access_key(UserName=user_name)
-    except Exception as exception:
-        die_with_message(
-            f"Failed to create access key for user '{user_name}':",
-            str(exception),
-        )
-
-    key = access_key["AccessKey"]
-    config["AccessKeyId"] = key["AccessKeyId"]
-    config["SecretAccessKey"] = key["SecretAccessKey"]
+    config.update(
+        {
+            key: output[key]
+            for key in ("AccessKeyId", "SecretAccessKey", "DkimTokens")
+        }
+    )
     config.save()
 
-    print(
-        f"User '{user_name}' and access keys created. To view the keys, "
-        "use '{EXECUTABLE} show-config'."
-    )
-
-
-@lampions.requires_config
-def verify_domain(config, _):
-    region = config["Region"]
-    domain = config["Domain"]
-
-    ses = boto3.client("ses", region_name=region)
-    dkim_tokens = ses.verify_domain_dkim(Domain=domain)
-    del dkim_tokens["ResponseMetadata"]
-    config.update(dkim_tokens)
-    config.save()
-
-    print(f"DKIM tokens for domain '{domain}' created:\n")
+    print(f"DKIM tokens for the domain '{domain}' are:\n")
     for token in config["DkimTokens"]:
         print(f"  {token}")
     print()
@@ -274,7 +129,7 @@ def verify_domain(config, _):
         "For each token, add a CNAME record of the form\n\n"
         "  Name                         Value\n"
         "  <token>._domainkey.<domain>  <token>.dkim.amazonses.com\n\n"
-        f"to the DNS settings of the domain '{domain}'. Note that the "
+        "to the DNS settings of the domain. Note that the "
         "'.<domain>' part\nneeds to be omitted with some DNS providers."
     )
     print()
@@ -284,229 +139,6 @@ def verify_domain(config, _):
         f"  inbound-smtp.{region}.amazonaws.com\n\n"
         "to the DNS settings."
     )
-
-
-def create_lambda_function_role(region, domain, bucket):
-    account_id = get_account_id()
-    name_prefix = create_lampions_name_prefix(domain)
-    policy_name = f"{name_prefix}LambdaRolePolicy"
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Sid": f"{name_prefix}LambdaFunctionCloudwatch",
-                "Effect": "Allow",
-                "Action": [
-                    "logs:CreateLogGroup",
-                    "logs:CreateLogStream",
-                    "logs:PutLogEvents",
-                ],
-                "Resource": "*",
-            },
-            {
-                "Sid": f"{name_prefix}LambdaFunctionS3ListBucket",
-                "Effect": "Allow",
-                "Action": "s3:ListBucket",
-                "Resource": f"arn:aws:s3:::{bucket}",
-            },
-            {
-                "Sid": f"{name_prefix}LambdaFunctionS3GetBucket",
-                "Effect": "Allow",
-                "Action": "s3:GetObject",
-                "Resource": f"arn:aws:s3:::{bucket}/*",
-            },
-            {
-                "Sid": f"{name_prefix}LambdaFunctionS3WriteRecipients",
-                "Effect": "Allow",
-                "Action": "s3:PutObject",
-                "Resource": f"arn:aws:s3:::{bucket}/recipients.json",
-            },
-            {
-                "Sid": f"{name_prefix}LambdaFunctionSesListIdentities",
-                "Effect": "Allow",
-                "Action": "ses:ListIdentities",
-                "Resource": "*",
-            },
-            {
-                "Sid": f"{name_prefix}LambdaFunctionSesSendMail",
-                "Effect": "Allow",
-                "Action": "ses:SendRawEmail",
-                "Resource": f"arn:aws:ses:{region}:{account_id}:identity/*",
-            },
-        ],
-    }
-    policy_document = json.dumps(policy)
-
-    iam = boto3.client("iam")
-    try:
-        policy = iam.create_policy(
-            PolicyName=policy_name, PolicyDocument=policy_document
-        )
-    except iam.exceptions.EntityAlreadyExistsException:
-        policy_arn = f"arn:aws:iam::{account_id}:policy/{policy_name}"
-    else:
-        policy_arn = policy["Policy"]["Arn"]
-
-    assume_policy = {
-        "Version": "2012-10-17",
-        "Statement": [
-            {
-                "Effect": "Allow",
-                "Principal": {"Service": "lambda.amazonaws.com"},
-                "Action": "sts:AssumeRole",
-            }
-        ],
-    }
-    assume_policy_document = json.dumps(assume_policy)
-
-    role_name = f"{name_prefix}LambdaFunctionRole"
-    try:
-        role = iam.create_role(
-            RoleName=role_name, AssumeRolePolicyDocument=assume_policy_document
-        )
-    except iam.exceptions.EntityAlreadyExistsException:
-        role_arn = f"arn:aws:iam::{account_id}:role/{role_name}"
-    else:
-        role_arn = role["Role"]["Arn"]
-    iam.attach_role_policy(RoleName=role_name, PolicyArn=policy_arn)
-    return role_arn
-
-
-def put_objects_zip(file_paths, zip_filename, region, bucket):
-    byte_stream = io.BytesIO()
-    with zipfile.ZipFile(byte_stream, mode="a") as archive:
-        for file_path in file_paths:
-            filename = Path(file_path).name
-            with open(file_path, "rb") as f:
-                info = zipfile.ZipInfo(filename)
-                info.external_attr = 0o644 << 16
-                archive.writestr(info, f.read())
-    byte_stream.seek(0)
-
-    s3 = boto3.client("s3", region_name=region)
-    s3.upload_fileobj(byte_stream, Bucket=bucket, Key=zip_filename)
-
-
-@lampions.requires_config
-def create_receipt_rule(config, _):
-    region = config["Region"]
-    domain = config["Domain"]
-    bucket = f"lampions.{domain}"
-
-    # Create policy for the Lambda function.
-    role_arn = create_lambda_function_role(region, domain, bucket)
-
-    # Upload the code of the Lambda function to the Lampions bucket.
-    directory = Path(__file__).resolve().parent
-    lambda_function_basename = "lambda_function"
-    lambda_files = [
-        directory / filename
-        for filename in [f"{lambda_function_basename}.py", "utils.py"]
-    ]
-    lambda_function_filename = f"{lambda_function_basename}.zip"
-    put_objects_zip(lambda_files, lambda_function_filename, region, bucket)
-
-    # Create the Lambda function.
-    name_prefix = create_lampions_name_prefix(domain)
-    function_name = f"{name_prefix}LambdaFunction"
-    lambda_ = boto3.client("lambda", region_name=region)
-    try:
-        lambda_function = lambda_.create_function(
-            FunctionName=function_name,
-            Runtime="python3.7",
-            Handler=f"{lambda_function_basename}.handler",
-            Code={"S3Bucket": bucket, "S3Key": lambda_function_filename},
-            Role=role_arn,
-            Environment={
-                "Variables": {
-                    "LAMPIONS_DOMAIN": domain,
-                    "LAMPIONS_REGION": region,
-                }
-            },
-            Timeout=30,
-        )
-    except lambda_.exceptions.ResourceConflictException:
-        print("Lambda function exists. Updating function configuration")
-        lambda_function = lambda_.update_function_configuration(
-            FunctionName=function_name,
-            Role=role_arn,
-            Handler=f"{lambda_function_basename}.handler",
-            Environment={
-                "Variables": {
-                    "LAMPIONS_DOMAIN": domain,
-                    "LAMPIONS_REGION": region,
-                }
-            },
-            Timeout=30,
-        )
-        delay = 2
-        print(f"Updating function code after a {delay} second delay")
-        time.sleep(delay)
-        lambda_function = lambda_.update_function_code(
-            FunctionName=function_name,
-            S3Bucket=bucket,
-            S3Key=lambda_function_filename,
-        )
-        function_arn = lambda_function["FunctionArn"]
-    else:
-        function_arn = lambda_function["FunctionArn"]
-
-    # Add permission to the Lambda function, granting SES invocation
-    # privileges.
-    try:
-        lambda_.add_permission(
-            FunctionName=function_name,
-            StatementId=f"{name_prefix}SesLambdaInvokeFunction",
-            Action="lambda:InvokeFunction",
-            Principal="ses.amazonaws.com",
-        )
-    except lambda_.exceptions.ResourceConflictException:
-        pass
-
-    rule_set_name = f"{name_prefix}ReceiptRuleSet"
-    ses = boto3.client("ses", region_name=region)
-    try:
-        ses.create_receipt_rule_set(RuleSetName=rule_set_name)
-    except ses.exceptions.AlreadyExistsException:
-        pass
-
-    rule = {
-        "Name": f"{name_prefix}ReceiptRule",
-        "Enabled": True,
-        "TlsPolicy": "Optional",
-        "Recipients": [domain],
-        "ScanEnabled": False,
-        "Actions": [
-            {"S3Action": {"BucketName": bucket, "ObjectKeyPrefix": "inbox"}},
-            {
-                "LambdaAction": {
-                    "FunctionArn": function_arn,
-                    "InvocationType": "Event",
-                }
-            },
-        ],
-    }
-    try:
-        ses.create_receipt_rule(RuleSetName=rule_set_name, Rule=rule)
-    except ses.exceptions.AlreadyExistsException:
-        pass
-    ses.set_active_receipt_rule_set(RuleSetName=rule_set_name)
-
-    print("Receipt rule created/updated")
-
-
-@lampions.requires_config
-def configure_lampions(_, args):
-    steps = [
-        ("Creating S3 bucket", create_s3_bucket),
-        ("Creating route user", create_route_user),
-        ("Registering domain with SES", verify_domain),
-        ("Creating receipt rule", create_receipt_rule),
-    ]
-    for i, (description, step) in enumerate(steps, start=1):
-        print(f"Step {i}: {description}")
-        step(args)
-        print()
 
 
 def initialize_config(args):
@@ -826,44 +458,6 @@ def parse_arguments():
         "configure", help="Configure AWS infrastructure for Lampions"
     )
     configure_parser.set_defaults(command=configure_lampions)
-    configure_command = configure_parser.add_subparsers(title="configure")
-
-    # Subcommand 'configure create-bucket'
-    bucket_parser = configure_command.add_parser(
-        "create-bucket",
-        help=(
-            "Create an S3 bucket to store route information "
-            "and incoming emails in"
-        ),
-    )
-    bucket_parser.set_defaults(command=create_s3_bucket)
-
-    # Subcommand 'configure create-route-user'
-    user_parser = configure_command.add_parser(
-        "create-route-user",
-        help=(
-            "Create an AWS user with permission to read "
-            "and write to the routes file"
-        ),
-    )
-    user_parser.set_defaults(command=create_route_user)
-
-    # Subcommand 'configure verify-domain'
-    domain_parser = configure_command.add_parser(
-        "verify-domain",
-        help="Add a domain to Amazon SES and begin the verification process",
-    )
-    domain_parser.set_defaults(command=verify_domain)
-
-    # Subcommand 'configure create-receipt-rule'
-    receipt_rule_parser = configure_command.add_parser(
-        "create-receipt-rule",
-        help=(
-            "Install receipt rule which saves incoming emails in S3 and "
-            "triggers a Lambda function to forward emails"
-        ),
-    )
-    receipt_rule_parser.set_defaults(command=create_receipt_rule)
 
     # Command 'add-forward-address'
     forward_parser = commands.add_parser(
