@@ -38,7 +38,7 @@ def retrieve_message(message_id):
     return message["Body"].read()
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ForwardAddress:
     alias: str
     email: str
@@ -83,7 +83,9 @@ def determine_forward_address(recipients) -> typing.Optional[ForwardAddress]:
                 )
             else:
                 forward_address = route["forward"]
-            forward_addresses.append(ForwardAddress(alias, forward_address))
+            forward_addresses.append(
+                ForwardAddress(alias=alias, email=forward_address)
+            )
             break
 
     if len(forward_addresses) == 0:
