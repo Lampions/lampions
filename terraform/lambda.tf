@@ -1,6 +1,21 @@
+resource "random_uuid" "lambda_src_hash" {
+  keepers = {
+    for filename in setunion(
+      fileset(local.root_dir, "pyproject.toml"),
+      fileset(local.root_dir, "src/**/*.py"),
+      fileset(local.root_dir, "**/*.tf"),
+    ):
+    filename => filesha256("${local.root_dir}/${filename}")
+  }
+}
+
 resource "null_resource" "install_dependencies" {
   provisioner "local-exec" {
-    command = "pip install -t ${local.root_dir}/lambda_code ${local.root_dir}"
+    command = "pip install -ut ${local.lambda_code_dir} ${local.root_dir}"
+  }
+
+  triggers = {
+    source_code_hash = random_uuid.lambda_src_hash.result
   }
 }
 
@@ -8,14 +23,14 @@ resource "null_resource" "install_dependencies" {
 data "archive_file" "lambda_function_code" {
   depends_on  = [null_resource.install_dependencies]
   type        = "zip"
-  source_dir  = "${local.root_dir}/lambda_code"
-  output_path = "${local.root_dir}/lambda_code.zip"
+  source_dir  = "${local.lambda_code_dir}"
+  output_path = "${local.lambda_code_dir}.zip"
 }
 
 # Lambda function.
 resource "aws_lambda_function" "lambda_function" {
   function_name    = "${local.lampions_prefix}LambdaFunction"
-  filename         = "${local.root_dir}/lambda_code.zip"
+  filename         = "${local.lambda_code_dir}.zip"
   source_code_hash = data.archive_file.lambda_function_code.output_base64sha256
   role             = aws_iam_role.lambda_role.arn
   runtime          = "python3.11"

@@ -18,4 +18,6 @@ variable "domain" {
 locals {
   lampions_prefix = format("Lampions%s", join("", [for part in split(".", var.domain) : title(part)]))
   root_dir        = "${path.module}/.."
+  lambda_src_dir  = "${path.module}/../src/lampions"
+  lambda_code_dir = "${path.module}/../lambda_code"
 }
