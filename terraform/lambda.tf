@@ -65,7 +65,7 @@ resource "aws_iam_role" "lampions_lambda_role" {
 }
 
 data "template_file" "lambda" {
-  template = file("${path.module}/../src/lampions/lambda.py")
+  template = file("${path.module}/../src/lampions/lambda_function.py")
 }
 
 data "template_file" "utils" {
@@ -79,7 +79,7 @@ data "archive_file" "lampions_lambda_function_code" {
 
   source {
     content  = data.template_file.lambda.rendered
-    filename = "lambda.py"
+    filename = "lambda_function.py"
   }
 
   source {
@@ -95,7 +95,7 @@ resource "aws_lambda_function" "lampions_lambda_function" {
   source_code_hash = data.archive_file.lampions_lambda_function_code.output_base64sha256
   role             = aws_iam_role.lampions_lambda_role.arn
   runtime          = "python3.11"
-  handler          = "lambda.handler"
+  handler          = "lambda_function.handler"
 
   environment {
     variables = {
