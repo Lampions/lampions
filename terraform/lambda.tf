@@ -28,3 +28,11 @@ resource "aws_lambda_function" "lambda_function" {
     }
   }
 }
+
+# Lambda function invocation permission.
+resource "aws_lambda_permission" "allow_ses" {
+  statement_id  = "${local.lampions_prefix}SesLambdaInvokeFunction"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.lambda_function.function_name
+  principal     = "ses.amazonaws.com"
+}
