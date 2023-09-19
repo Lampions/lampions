@@ -7,18 +7,9 @@ import typing
 from dataclasses import dataclass
 
 import boto3
+from loguru import logger
 
-# HACK(nkoep): Temporary hacks while we are deploying the lambda function as
-#              zip archive.
-try:
-    from loguru import logger
-except ImportError:
-    import logging as logger
-
-try:
-    from lampions import utils
-except ImportError:
-    import utils
+from lampions import utils
 
 
 def handler(event, _):
