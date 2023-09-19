@@ -1,18 +1,18 @@
 # Bucket for incoming emails and route aliases.
-resource "aws_s3_bucket" "lampions_s3_bucket" {
+resource "aws_s3_bucket" "bucket" {
   bucket = "lampions.${var.domain}"
 }
 
 # Bucket versioning.
-resource "aws_s3_bucket_versioning" "lampions_s3_bucket_versioning" {
-  bucket = aws_s3_bucket.lampions_s3_bucket.id
+resource "aws_s3_bucket_versioning" "bucket_versioning" {
+  bucket = aws_s3_bucket.bucket.id
   versioning_configuration {
     status = "Enabled"
   }
 }
 
 # Bucket policy document.
-data "aws_iam_policy_document" "lampions_s3_bucket_policy_document" {
+data "aws_iam_policy_document" "bucket_policy_document" {
   statement {
     sid    = "${local.lampions_prefix}SesS3Put"
     effect = "Allow"
@@ -21,7 +21,7 @@ data "aws_iam_policy_document" "lampions_s3_bucket_policy_document" {
       identifiers = ["ses.amazonaws.com"]
     }
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.lampions_s3_bucket.arn}/inbox/*"]
+    resources = ["${aws_s3_bucket.bucket.arn}/inbox/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:Referer"
@@ -31,7 +31,7 @@ data "aws_iam_policy_document" "lampions_s3_bucket_policy_document" {
 }
 
 # Bucket policy.
-resource "aws_s3_bucket_policy" "lampions_s3_bucket_policy" {
-  bucket = aws_s3_bucket.lampions_s3_bucket.id
-  policy = data.aws_iam_policy_document.lampions_s3_bucket_policy_document.json
+resource "aws_s3_bucket_policy" "bucket_policy" {
+  bucket = aws_s3_bucket.bucket.id
+  policy = data.aws_iam_policy_document.bucket_policy_document.json
 }

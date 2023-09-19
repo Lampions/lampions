@@ -7,14 +7,14 @@ output "Domain" {
 }
 
 output "AccessKeyId" {
-  value = aws_iam_access_key.lampions_iam_route_user_access_key.id
+  value = aws_iam_access_key.access_key.id
 }
 
 output "SecretAccessKey" {
-  value     = aws_iam_access_key.lampions_iam_route_user_access_key.secret
+  value     = aws_iam_access_key.access_key.secret
   sensitive = true
 }
 
 output "DkimTokens" {
-  value = aws_ses_domain_dkim.lampions_ses_domain_dkim.dkim_tokens
+  value = aws_ses_domain_dkim.dkim.dkim_tokens
 }
