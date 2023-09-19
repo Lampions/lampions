@@ -8,19 +8,19 @@ from moto import mock_s3, mock_ses
 REGION = "eu-west-1"
 
 
-@pytest.fixture
-def aws_credentials():
+@pytest.fixture()
+def _aws_credentials():
     os.environ["AWS_ACCESS_KEY_ID"] = "testing"
-    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"  # noqa
 
 
-@pytest.fixture
-def s3_client(aws_credentials):
+@pytest.fixture()
+def s3_client(_aws_credentials):
     with mock_s3():
         yield boto3.client("s3", region_name=REGION)
 
 
-@pytest.fixture
+@pytest.fixture()
 def s3_bucket(s3_client):
     def create_bucket(domain: str):
         bucket_name = f"lampions.{domain}"
@@ -36,16 +36,16 @@ def s3_bucket(s3_client):
             pass
         return boto3.resource("s3").Bucket(bucket_name)
 
-    yield create_bucket
+    return create_bucket
 
 
-@pytest.fixture
+@pytest.fixture()
 def ses_client():
     with mock_ses():
         yield boto3.client("ses", region_name=REGION)
 
 
-@pytest.fixture
+@pytest.fixture()
 def create_test_email():
     # TODO: Don't use raw strings for this.
     def test_email(domain: str):
@@ -74,7 +74,7 @@ w=2Ew3=2Eorg/TR/html4/loose=2Edtd">
     return test_email
 
 
-@pytest.fixture
+@pytest.fixture()
 def create_test_routes():
     def test_routes(routes) -> str:
         return json.dumps(

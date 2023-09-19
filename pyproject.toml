@@ -46,7 +46,7 @@ line-length = 79
 [tool.ruff]
 line-length = 79
 fixable = []
-select = ["B", "E", "F", "I", "W"]
+select = ["A", "B", "E", "F", "FBT", "I", "PT", "RUF", "S", "W"]
 src = ["src"]
 
 [tool.ruff.pydocstyle]

@@ -9,7 +9,7 @@ REGION = "eu-west-1"
 DOMAIN = "vandelay-industries.com"
 
 
-@pytest.fixture
+@pytest.fixture()
 def create_ses_sns_event(s3_bucket, create_test_email):
     bucket = s3_bucket(DOMAIN)
 
@@ -20,8 +20,8 @@ def create_ses_sns_event(s3_bucket, create_test_email):
     return {"Records": [{"ses": {"mail": {"messageId": message_id}}}]}, None
 
 
-@pytest.fixture
-def create_routes(s3_bucket, create_test_routes):
+@pytest.fixture()
+def _create_routes(s3_bucket, create_test_routes):
     bucket = s3_bucket(DOMAIN)
     routes = create_test_routes(
         [
@@ -32,7 +32,8 @@ def create_routes(s3_bucket, create_test_routes):
     bucket.put_object(Body=routes, Key="routes.json")
 
 
-def test_handler(monkeypatch, create_routes, create_ses_sns_event, ses_client):
+@pytest.mark.usefixtures("_create_routes")
+def test_handler(monkeypatch, create_ses_sns_event, ses_client):
     monkeypatch.setenv("LAMPIONS_REGION", REGION)
     monkeypatch.setenv("LAMPIONS_DOMAIN", DOMAIN)
 
