@@ -1,8 +1,10 @@
+import dataclasses
 import email.utils
 import functools
 import io
 import json
 import pathlib
+import typing
 from argparse import ArgumentParser
 from pathlib import Path
 from pydoc import pager
@@ -31,44 +33,54 @@ def die_with_message(*args):
     raise SystemExit("Error: " + "\n".join(args))
 
 
-class Config(dict):
-    REQUIRED_KEYS = ("Region", "Domain")
-    VALID_KEYS = ("AccessKeyId", "SecretAccessKey", "DkimTokens")
+@dataclasses.dataclass
+class Config:
+    file_path: Path
 
-    def __init__(self, file_path):
-        super().__init__()
-        self.file_path = Path(file_path)
+    Region: typing.Optional[str] = dataclasses.field(init=False, default=None)
+    Domain: typing.Optional[str] = dataclasses.field(init=False, default=None)
+    AccessKeyId: typing.Optional[str] = dataclasses.field(
+        init=False, default=None
+    )
+    SecretAccessKey: typing.Optional[str] = dataclasses.field(
+        init=False, default=None
+    )
+    DkimTokens: typing.Optional[typing.List[str]] = dataclasses.field(
+        init=False, default=None
+    )
+
+    def __post_init__(self):
         self.read()
 
-    def read(self):
-        if self.file_path.is_file():
-            with open(self.file_path) as f:
-                try:
-                    config = json.loads(f.read())
-                except json.JSONDecodeError:
-                    pass
-                else:
-                    self.update(config)
-                    self.verify()
-
-    def __setitem__(self, key, value):
-        if key not in self.REQUIRED_KEYS and key not in self.VALID_KEYS:
-            die_with_message(f"Invalid config key '{key}'")
-        super().__setitem__(key, value)
-
     def __str__(self):
-        return utils.dict_to_formatted_json(self)
+        config = dataclasses.asdict(self)
+        config.pop("file_path")
+        return utils.dict_to_formatted_json(config)
+
+    def update(self, values: typing.Dict[str, typing.Any]):
+        for key, value in values.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+
+    def read(self):
+        if not self.file_path.is_file():
+            return
+        with open(self.file_path) as fp:
+            try:
+                config = json.loads(fp.read())
+            except json.JSONDecodeError:
+                pass
+            else:
+                self.update(config)
+                self.verify()
 
     def verify(self):
-        for key in self.REQUIRED_KEYS:
-            if key not in self:
+        for key in ("Region", "Domain"):
+            if getattr(self, key, None) is None:
                 die_with_message(
                     f"Lampions is not initialized yet. Call '{EXECUTABLE} "
                     "init' first."
                 )
-        for key in self.keys():
-            if key not in self.REQUIRED_KEYS and key not in self.VALID_KEYS:
-                die_with_message(f"Invalid key '{key}' in config")
 
     def save(self):
         self.verify()
@@ -78,11 +90,11 @@ class Config(dict):
         self.file_path.chmod(0o600)
 
 
+@dataclasses.dataclass(kw_only=True)
 class Lampions:
-    def __init__(self):
-        self.config = None
+    config: typing.Optional[Config] = None
 
-    def requires_config(self, function):
+    def provide_config(self, function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
             if self.config is None:
@@ -98,13 +110,13 @@ class Lampions:
 lampions = Lampions()
 
 
-@lampions.requires_config
+@lampions.provide_config
 def configure_lampions(config: Config, _):
     terraform_dir = str(
         pathlib.Path(__file__).resolve().parent.parent.parent / "terraform"
     )
-    domain = config["Domain"]
-    region = config["Region"]
+    domain = config.Domain
+    region = config.Region
 
     tf = tftest.TerraformTest(".", terraform_dir)
     tf.init()
@@ -121,8 +133,13 @@ def configure_lampions(config: Config, _):
     )
     config.save()
 
+    tokens = config.DkimTokens
+    if tokens is None:
+        die_with_message("DKIM tokens are missing")
+
+    # TODO: Do this without calling 'print' multiple times.
     print(f"DKIM tokens for the domain '{domain}' are:\n")
-    for token in config["DkimTokens"]:
+    for token in tokens:
         print(f"  {token}")
     print()
     print(
@@ -147,19 +164,19 @@ def initialize_config(args):
         die_with_message(f"Invalid domain name '{domain}'")
 
     config = Config(CONFIG_PATH)
-    config["Region"] = args["region"]
-    config["Domain"] = domain
+    config.Region = args["region"]
+    config.Domain = domain
     config.save()
 
 
-@lampions.requires_config
+@lampions.provide_config
 def print_config(config, _):
     print(str(config))
 
 
-@lampions.requires_config
+@lampions.provide_config
 def add_forward_address(config, args):
-    region = config["Region"]
+    region = config.Region
     address = args["address"]
 
     if not validate_email(address):
@@ -177,8 +194,8 @@ def add_forward_address(config, args):
 
 
 def get_routes(config):
-    region = config["Region"]
-    domain = config["Domain"]
+    region = config.Region
+    domain = config.Domain
     bucket = f"lampions.{domain}"
 
     s3 = boto3.client("s3", region_name=region)
@@ -197,8 +214,8 @@ def get_routes(config):
 
 
 def set_routes(config, routes):
-    region = config["Region"]
-    domain = config["Domain"]
+    region = config.Region
+    domain = config.Domain
     bucket = f"lampions.{domain}"
 
     routes_string = utils.dict_to_formatted_json({"routes": routes})
@@ -206,9 +223,9 @@ def set_routes(config, routes):
     s3.put_object(Bucket=bucket, Key="routes.json", Body=routes_string)
 
 
-@lampions.requires_config
+@lampions.provide_config
 def list_routes(config, args):
-    domain = config["Domain"]
+    domain = config.Domain
     only_active = args["active"]
     only_inactive = args["inactive"]
 
@@ -259,7 +276,7 @@ def verify_forward_address(config, forward_address):
     if not validate_email(forward_address):
         die_with_message(f"Invalid email address '{forward_address}'")
 
-    region = config["Region"]
+    region = config.Region
 
     ses = boto3.client("ses", region_name=region)
     result = ses.list_identities()
@@ -270,9 +287,9 @@ def verify_forward_address(config, forward_address):
         )
 
 
-@lampions.requires_config
+@lampions.provide_config
 def add_route(config, args):
-    domain = config["Domain"]
+    domain = config.Domain
     alias = args["alias"]
     forward_address = args["forward"]
     active = not args["inactive"]
@@ -303,7 +320,7 @@ def add_route(config, args):
     print(f"Route for alias '{alias}' added")
 
 
-@lampions.requires_config
+@lampions.provide_config
 def update_route(config, args):
     alias = args["alias"]
     forward_address = args["forward"]
@@ -337,7 +354,7 @@ def update_route(config, args):
     print(f"Route for alias '{alias}' updated")
 
 
-@lampions.requires_config
+@lampions.provide_config
 def remove_route(config, args):
     alias = args["alias"]
 
@@ -365,10 +382,10 @@ def resolve_forward_addresses(hash_address_mapping, domain):
     return addresses
 
 
-@lampions.requires_config
+@lampions.provide_config
 def list_recipients(config, args):
-    region = config["Region"]
-    domain = config["Domain"]
+    region = config.Region
+    domain = config.Domain
     bucket = f"lampions.{domain}"
 
     alias = args.get("alias")
