@@ -23,6 +23,7 @@ classifiers = [
 dependencies = [
   "boto3==1.12",
   "loguru",
+  "tabulate",
   "tftest",
   "validate_email"
 ]

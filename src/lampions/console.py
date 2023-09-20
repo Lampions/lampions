@@ -1,7 +1,6 @@
 import dataclasses
 import email.utils
 import functools
-import io
 import json
 import pathlib
 import typing
@@ -10,6 +9,8 @@ from pathlib import Path
 from pydoc import pager
 
 import boto3
+import dateutil.parser
+import tabulate
 import tftest
 from validate_email import validate_email
 
@@ -229,47 +230,35 @@ def list_routes(config, args):
     only_active = args["active"]
     only_inactive = args["inactive"]
 
-    routes = get_routes(config)
-    column_widths = {"alias": 0, "forward": 0}
-    for route in routes:
-        for key in column_widths.keys():
-            column_widths[key] = max(len(route[key]), column_widths[key])
-    column_widths["alias"] += len(f"@{domain}")
-
-    def pad_with_spaces(string, num_characters=-1):
-        if num_characters == -1:
-            num_characters = len(string)
-        return string + " " * (num_characters + 4 - len(string))
-
-    stream = io.StringIO()
-    print(
-        pad_with_spaces("Address", column_widths["alias"])
-        + pad_with_spaces("Forward", column_widths["forward"])
-        + pad_with_spaces("Active"),
-        file=stream,
-    )
-    print(
-        pad_with_spaces("-------", column_widths["alias"])
-        + pad_with_spaces("-------", column_widths["forward"])
-        + pad_with_spaces("------"),
-        file=stream,
-    )
-
-    for route in routes:
+    def route_filter(route):
         active = route["active"]
         if only_active and not active:
-            continue
+            return False
         if only_inactive and active:
-            continue
-        alias = route["alias"]
-        forward_address = route["forward"]
-        print(
-            pad_with_spaces(f"{alias}@{domain}", column_widths["alias"])
-            + pad_with_spaces(forward_address, column_widths["forward"])
-            + pad_with_spaces(f"  {'✓' if active else '✗'}"),
-            file=stream,
-        )
-    quit_with_message(stream.getvalue(), use_pager=True)
+            return False
+        return True
+
+    routes = sorted(
+        [
+            {
+                "Address": f"{route['alias']}@{domain}",
+                "Forward": route["forward"],
+                "Created": dateutil.parser.parse(route["createdAt"]),
+                "Active": "✓" if route["active"] else "✗",
+            }
+            for route in get_routes(config)
+            if route_filter(route)
+        ],
+        key=lambda route: route["Created"],
+        reverse=True,
+    )
+    table = tabulate.tabulate(
+        routes,
+        headers="keys",
+        showindex=range(1, len(routes) + 1),
+        colalign=["left"] * 4 + ["center"],
+    )
+    quit_with_message(table, use_pager=True)
 
 
 def verify_forward_address(config, forward_address):
