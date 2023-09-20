@@ -35,6 +35,25 @@ resource "aws_iam_access_key" "access_key" {
   user = aws_iam_user.user.name
 }
 
+# Bucket policy document.
+data "aws_iam_policy_document" "bucket_policy_document" {
+  statement {
+    sid    = "${local.lampions_prefix}SesS3Put"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["ses.amazonaws.com"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.bucket.arn}/inbox/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:Referer"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
 # Lambda role policy document.
 data "aws_iam_policy_document" "lambda_role_policy_document" {
   statement {
@@ -83,11 +102,11 @@ data "aws_iam_policy_document" "lambda_role_policy_document" {
 data "aws_iam_policy_document" "lambda_role_policy" {
   statement {
     effect = "Allow"
+    actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
       identifiers = ["lambda.amazonaws.com"]
     }
-    actions = ["sts:AssumeRole"]
   }
 }
 
