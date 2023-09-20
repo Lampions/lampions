@@ -6,14 +6,12 @@ resource "aws_iam_user" "user" {
 # Route user policy document.
 data "aws_iam_policy_document" "route_user_policy_document" {
   statement {
-    sid       = "${local.lampions_prefix}S3ListBucket"
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
     resources = [aws_s3_bucket.bucket.arn]
   }
 
   statement {
-    sid     = "${local.lampions_prefix}S3GetPutRoutes"
     effect  = "Allow"
     actions = ["s3:GetObject", "s3:PutObject"]
     resources = [
@@ -38,14 +36,13 @@ resource "aws_iam_access_key" "access_key" {
 # Bucket policy document.
 data "aws_iam_policy_document" "bucket_policy_document" {
   statement {
-    sid    = "${local.lampions_prefix}SesS3Put"
     effect = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.bucket.arn}/inbox/*"]
     principals {
       type        = "Service"
       identifiers = ["ses.amazonaws.com"]
     }
-    actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.bucket.arn}/inbox/*"]
     condition {
       test     = "StringEquals"
       variable = "aws:Referer"
@@ -57,7 +54,6 @@ data "aws_iam_policy_document" "bucket_policy_document" {
 # Lambda role policy document.
 data "aws_iam_policy_document" "lambda_role_policy_document" {
   statement {
-    sid    = "${local.lampions_prefix}LambdaFunctionCloudwatch"
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",
@@ -67,31 +63,26 @@ data "aws_iam_policy_document" "lambda_role_policy_document" {
     resources = ["*"]
   }
   statement {
-    sid       = "${local.lampions_prefix}LambdaFunctionS3ListBucket"
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
     resources = [aws_s3_bucket.bucket.arn]
   }
   statement {
-    sid       = "${local.lampions_prefix}LambdaFunctionS3GetBucket"
     effect    = "Allow"
     actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.bucket.arn}/*"]
   }
   statement {
-    sid       = "${local.lampions_prefix}LambdaFunctionS3WriteRecipients"
     effect    = "Allow"
     actions   = ["s3:PutObject"]
     resources = ["${aws_s3_bucket.bucket.arn}/recipients.json"]
   }
   statement {
-    sid       = "${local.lampions_prefix}LambdaFunctionSesListIdentities"
     effect    = "Allow"
     actions   = ["ses:ListIdentities"]
     resources = ["*"]
   }
   statement {
-    sid       = "${local.lampions_prefix}LambdaFunctionSesSendMail"
     effect    = "Allow"
     actions   = ["ses:SendRawEmail"]
     resources = [aws_ses_domain_identity.domain.arn]
