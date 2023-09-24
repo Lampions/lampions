@@ -2,7 +2,6 @@ import dataclasses
 import email.utils
 import functools
 import json
-import pathlib
 import typing
 from argparse import ArgumentParser
 from pathlib import Path
@@ -16,7 +15,6 @@ from validate_email import validate_email
 
 from . import utils
 
-EXECUTABLE = Path(__file__).name
 CONFIG_PATH = Path("~/.config/lampions/config.json").expanduser()
 
 REGIONS = ("eu-west-1", "us-east-1", "us-west-2")
@@ -79,8 +77,8 @@ class Config:
         for key in ("Region", "Domain"):
             if getattr(self, key, None) is None:
                 die_with_message(
-                    f"Lampions is not initialized yet. Call '{EXECUTABLE} "
-                    "init' first."
+                    "Lampions is not initialized yet. Call 'lampions init' "
+                    "first."
                 )
 
     def save(self):
