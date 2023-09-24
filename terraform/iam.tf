@@ -1,44 +1,44 @@
 # Route user.
-resource "aws_iam_user" "user" {
-  name = "${local.lampions_prefix}RouteUser"
+resource "aws_iam_user" "this" {
+  name = local.lampions_prefix
 }
 
 # Route user policy document.
-data "aws_iam_policy_document" "route_user_policy_document" {
+data "aws_iam_policy_document" "user" {
   statement {
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
-    resources = [aws_s3_bucket.bucket.arn]
+    resources = [aws_s3_bucket.this.arn]
   }
 
   statement {
     effect  = "Allow"
     actions = ["s3:GetObject", "s3:PutObject"]
     resources = [
-      "${aws_s3_bucket.bucket.arn}/routes.json",
-      "${aws_s3_bucket.bucket.arn}/recipients.json"
+      "${aws_s3_bucket.this.arn}/routes.json",
+      "${aws_s3_bucket.this.arn}/recipients.json"
     ]
   }
 }
 
 # Route user policy.
-resource "aws_iam_user_policy" "route_user_policy" {
-  name   = "${local.lampions_prefix}RoutesAndRecipientsFilePolicy"
-  user   = aws_iam_user.user.name
-  policy = data.aws_iam_policy_document.route_user_policy_document.json
+resource "aws_iam_user_policy" "this" {
+  name   = local.lampions_prefix
+  user   = aws_iam_user.this.name
+  policy = data.aws_iam_policy_document.user.json
 }
 
 # Access key.
-resource "aws_iam_access_key" "access_key" {
-  user = aws_iam_user.user.name
+resource "aws_iam_access_key" "this" {
+  user = aws_iam_user.this.name
 }
 
 # Bucket policy document.
-data "aws_iam_policy_document" "bucket_policy_document" {
+data "aws_iam_policy_document" "bucket" {
   statement {
-    effect = "Allow"
+    effect    = "Allow"
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.bucket.arn}/inbox/*"]
+    resources = ["${aws_s3_bucket.this.arn}/inbox/*"]
     principals {
       type        = "Service"
       identifiers = ["ses.amazonaws.com"]
@@ -46,13 +46,13 @@ data "aws_iam_policy_document" "bucket_policy_document" {
     condition {
       test     = "StringEquals"
       variable = "aws:Referer"
-      values   = [data.aws_caller_identity.current.account_id]
+      values   = [data.aws_caller_identity.this.account_id]
     }
   }
 }
 
 # Lambda role policy document.
-data "aws_iam_policy_document" "lambda_role_policy_document" {
+data "aws_iam_policy_document" "lambda" {
   statement {
     effect = "Allow"
     actions = [
@@ -65,17 +65,17 @@ data "aws_iam_policy_document" "lambda_role_policy_document" {
   statement {
     effect    = "Allow"
     actions   = ["s3:ListBucket"]
-    resources = [aws_s3_bucket.bucket.arn]
+    resources = [aws_s3_bucket.this.arn]
   }
   statement {
     effect    = "Allow"
     actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.bucket.arn}/*"]
+    resources = ["${aws_s3_bucket.this.arn}/*"]
   }
   statement {
     effect    = "Allow"
     actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.bucket.arn}/recipients.json"]
+    resources = ["${aws_s3_bucket.this.arn}/recipients.json"]
   }
   statement {
     effect    = "Allow"
@@ -85,14 +85,14 @@ data "aws_iam_policy_document" "lambda_role_policy_document" {
   statement {
     effect    = "Allow"
     actions   = ["ses:SendRawEmail"]
-    resources = [aws_ses_domain_identity.domain.arn]
+    resources = [aws_ses_domain_identity.this.arn]
   }
 }
 
 # Lambda role policy.
-data "aws_iam_policy_document" "lambda_role_policy" {
+data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["sts:AssumeRole"]
     principals {
       type        = "Service"
@@ -102,11 +102,11 @@ data "aws_iam_policy_document" "lambda_role_policy" {
 }
 
 # Lambda role.
-resource "aws_iam_role" "lambda_role" {
-  name               = "${local.lampions_prefix}LambdaFunctionRole"
-  assume_role_policy = data.aws_iam_policy_document.lambda_role_policy.json
+resource "aws_iam_role" "this" {
+  name               = local.lampions_prefix
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
   inline_policy {
-    name   = "${local.lampions_prefix}LambdaRolePolicy"
-    policy = data.aws_iam_policy_document.lambda_role_policy_document.json
+    name   = local.lampions_prefix
+    policy = data.aws_iam_policy_document.lambda.json
   }
 }

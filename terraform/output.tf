@@ -1,20 +1,20 @@
-output "Region" {
+output "region" {
   value = var.region
 }
 
-output "Domain" {
+output "domain" {
   value = var.domain
 }
 
-output "AccessKeyId" {
-  value = aws_iam_access_key.access_key.id
+output "access_key_id" {
+  value = aws_iam_access_key.this.id
 }
 
-output "SecretAccessKey" {
-  value     = aws_iam_access_key.access_key.secret
+output "secret_access_key" {
+  value     = aws_iam_access_key.this.secret
   sensitive = true
 }
 
-output "DkimTokens" {
-  value = aws_ses_domain_dkim.dkim.dkim_tokens
+output "dkim_tokens" {
+  value = aws_ses_domain_dkim.this.dkim_tokens
 }
