@@ -22,6 +22,22 @@ TERRAFORM_DIRECTORY = str(
 
 REGIONS = ("eu-west-1", "us-east-1", "us-west-2")
 
+DKIM_TOKEN_MESSAGE = """
+DKIM tokens for the domain '{domain}' are:
+{tokens}
+
+For each token, add a CNAME record of the form
+  Name                         Value
+  <token>._domainkey.<domain>  <token>.dkim.amazonses.com
+to the DNS settings of the domain. Note that the '.<domain>' part needs to be
+omitted on some DNS providers.
+
+To configure the domain for receiving, also make sure to add an MX record with
+  inbound-smtp.{region}.amazonaws.com
+to the DNS settings.
+)
+""".strip()
+
 
 def quit_with_message(text: str, *, use_pager: bool = False):
     if use_pager:
@@ -135,24 +151,12 @@ def configure_lampions(config: Config, _):
     if tokens is None:
         die_with_message("DKIM tokens are missing")
 
-    # TODO: Do this without calling 'print' multiple times.
-    print(f"DKIM tokens for the domain '{domain}' are:\n")
-    for token in tokens:
-        print(f"  {token}")
-    print()
     print(
-        "For each token, add a CNAME record of the form\n\n"
-        "  Name                         Value\n"
-        "  <token>._domainkey.<domain>  <token>.dkim.amazonses.com\n\n"
-        "to the DNS settings of the domain. Note that the "
-        "'.<domain>' part\nneeds to be omitted with some DNS providers."
-    )
-    print()
-    print(
-        "To configure the domain for receiving, also make sure to add an MX "
-        "record with\n\n"
-        f"  inbound-smtp.{region}.amazonaws.com\n\n"
-        "to the DNS settings."
+        DKIM_TOKEN_MESSAGE.format(
+            domain=domain,
+            regoin=region,
+            tokens="\n".join(map(lambda token: f"  {token}", tokens)),
+        )
     )
 
 
