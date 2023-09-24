@@ -16,6 +16,9 @@ from validate_email import validate_email
 from . import utils
 
 CONFIG_PATH = Path("~/.config/lampions/config.json").expanduser()
+TERRAFORM_DIRECTORY = str(
+    Path(__file__).resolve().parent.parent.parent / "terraform"
+)
 
 REGIONS = ("eu-west-1", "us-east-1", "us-west-2")
 
@@ -28,23 +31,23 @@ def quit_with_message(text: str, *, use_pager: bool = False):
     raise SystemExit
 
 
-def die_with_message(*args):
-    raise SystemExit("Error: " + "\n".join(args))
+def die_with_message(text: str):
+    raise SystemExit(f"Error: {text}")
 
 
 @dataclasses.dataclass
 class Config:
     file_path: Path
 
-    Region: typing.Optional[str] = dataclasses.field(init=False, default=None)
-    Domain: typing.Optional[str] = dataclasses.field(init=False, default=None)
-    AccessKeyId: typing.Optional[str] = dataclasses.field(
+    region: typing.Optional[str] = dataclasses.field(init=False, default=None)
+    domain: typing.Optional[str] = dataclasses.field(init=False, default=None)
+    access_key_id: typing.Optional[str] = dataclasses.field(
         init=False, default=None
     )
-    SecretAccessKey: typing.Optional[str] = dataclasses.field(
+    secret_access_key: typing.Optional[str] = dataclasses.field(
         init=False, default=None
     )
-    DkimTokens: typing.Optional[typing.List[str]] = dataclasses.field(
+    dkim_tokens: typing.Optional[typing.List[str]] = dataclasses.field(
         init=False, default=None
     )
 
@@ -68,13 +71,12 @@ class Config:
             try:
                 config = json.loads(fp.read())
             except json.JSONDecodeError:
-                pass
-            else:
-                self.update(config)
-                self.verify()
+                return
+        self.update(config)
+        self.verify()
 
     def verify(self):
-        for key in ("Region", "Domain"):
+        for key in ("region", "domain"):
             if getattr(self, key, None) is None:
                 die_with_message(
                     "Lampions is not initialized yet. Call 'lampions init' "
@@ -111,13 +113,10 @@ lampions = Lampions()
 
 @lampions.provide_config
 def configure_lampions(config: Config, _):
-    terraform_dir = str(
-        pathlib.Path(__file__).resolve().parent.parent.parent / "terraform"
-    )
-    domain = config.Domain
-    region = config.Region
+    domain = config.domain
+    region = config.region
 
-    tf = tftest.TerraformTest(".", terraform_dir)
+    tf = tftest.TerraformTest(".", TERRAFORM_DIRECTORY)
     tf.init()
     variables = {"domain": domain, "region": region}
     tf.plan(tf_vars=variables)
@@ -127,12 +126,12 @@ def configure_lampions(config: Config, _):
     config.update(
         {
             key: output[key]
-            for key in ("AccessKeyId", "SecretAccessKey", "DkimTokens")
+            for key in ("access_key_id", "secret_access_key", "dkim_tokens")
         }
     )
     config.save()
 
-    tokens = config.DkimTokens
+    tokens = config.dkim_tokens
     if tokens is None:
         die_with_message("DKIM tokens are missing")
 
@@ -163,8 +162,8 @@ def initialize_config(args):
         die_with_message(f"Invalid domain name '{domain}'")
 
     config = Config(CONFIG_PATH)
-    config.Region = args["region"]
-    config.Domain = domain
+    config.region = args["region"]
+    config.domain = domain
     config.save()
 
 
@@ -175,7 +174,7 @@ def print_config(config, _):
 
 @lampions.provide_config
 def add_forward_address(config, args):
-    region = config.Region
+    region = config.region
     address = args["address"]
 
     if not validate_email(address):
@@ -186,15 +185,15 @@ def add_forward_address(config, args):
         ses.verify_email_identity(EmailAddress=address)
     except ses.exceptions.ClientError as exception:
         die_with_message(
-            "Failed to add address to verification list:", str(exception)
+            f"Failed to add address to verification list:\n{exception}"
         )
     else:
         print(f"Verification mail sent to '{address}'")
 
 
 def get_routes(config):
-    region = config.Region
-    domain = config.Domain
+    region = config.region
+    domain = config.domain
     bucket = f"lampions.{domain}"
 
     s3 = boto3.client("s3", region_name=region)
@@ -213,8 +212,8 @@ def get_routes(config):
 
 
 def set_routes(config, routes):
-    region = config.Region
-    domain = config.Domain
+    region = config.region
+    domain = config.domain
     bucket = f"lampions.{domain}"
 
     routes_string = utils.dict_to_formatted_json({"routes": routes})
@@ -224,7 +223,7 @@ def set_routes(config, routes):
 
 @lampions.provide_config
 def list_routes(config, args):
-    domain = config.Domain
+    domain = config.domain
     only_active = args["active"]
     only_inactive = args["inactive"]
 
@@ -263,7 +262,7 @@ def verify_forward_address(config, forward_address):
     if not validate_email(forward_address):
         die_with_message(f"Invalid email address '{forward_address}'")
 
-    region = config.Region
+    region = config.region
 
     ses = boto3.client("ses", region_name=region)
     result = ses.list_identities()
@@ -276,7 +275,7 @@ def verify_forward_address(config, forward_address):
 
 @lampions.provide_config
 def add_route(config, args):
-    domain = config.Domain
+    domain = config.domain
     alias = args["alias"]
     forward_address = args["forward"]
     active = not args["inactive"]
@@ -371,8 +370,8 @@ def resolve_forward_addresses(hash_address_mapping, domain):
 
 @lampions.provide_config
 def list_recipients(config, args):
-    region = config.Region
-    domain = config.Domain
+    region = config.region
+    domain = config.domain
     bucket = f"lampions.{domain}"
 
     alias = args.get("alias")
@@ -432,7 +431,7 @@ def list_recipients(config, args):
     quit_with_message(utils.dict_to_formatted_json(addresses), use_pager=True)
 
 
-def parse_arguments():
+def parse_arguments() -> typing.Dict[str, typing.Any]:
     parser = ArgumentParser("lampions")
     commands = parser.add_subparsers(
         title="Subcommands", dest="command", required=True
